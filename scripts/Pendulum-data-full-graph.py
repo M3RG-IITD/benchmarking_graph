@@ -53,7 +53,7 @@ class Datastate:
 
 
 
-def main(N=2, dim=2, saveat=100, nconfig=1000, ifdrag=0, runs=101):
+def main(N=2, dim=2, saveat=100, nconfig=1000, ifdrag=0, runs=1001):
 
     tag = f"{N}-Pendulum-data"
     seed = 42

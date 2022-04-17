@@ -54,7 +54,7 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=42, rname=0,  saveovito=1, trainm=1, runs=10, semilog=1, maxtraj=1, plotthings=False, redo=0):
+def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0,  saveovito=0, trainm=1, runs=20, semilog=1, maxtraj=10, plotthings=False, redo=0):
 
     print("Configs: ")
     pprint(dt, stride, ifdrag,
@@ -454,8 +454,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=42, rname=0,
                 net_force_orig = net_force_orig_fn(traj)
                 net_force_model = net_force_model_fn(traj)
 
-                fig, axs = plt.subplots(1+R.shape[0], 1, figsize=(20,
-                                                           R.shape[0]*5), hshift=0.1, vs=0.35)
+                fig, axs = plt.subplots(1+R.shape[0], 1, figsize=(20, R.shape[0]*5), hshift=0.1, vs=0.35)
                 for i, ax in zip(range(R.shape[0]+1), axs):
                     if i == 0:
                         ax.text(0.6, 0.8, "Averaged over all particles",

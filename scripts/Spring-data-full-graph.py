@@ -16,6 +16,7 @@ from jax import jit, random, value_and_grad, vmap
 from jax.experimental import optimizers
 from jax_md import space
 import matplotlib.pyplot as plt
+
 # from shadow.plot import *
 # from sklearn.metrics import r2_score
 
@@ -25,6 +26,9 @@ from psystems.nsprings import (chain, edge_order, get_connections,
 
 MAINPATH = ".."  # nopep8
 sys.path.append(MAINPATH)  # nopep8
+
+from pyexpat import model
+from statistics import mode
 
 import jraph
 import src
@@ -41,6 +45,7 @@ config.update("jax_enable_x64", True)
 config.update("jax_debug_nans", True)
 # jax.config.update('jax_platform_name', 'gpu')
 
+#create a new state for storing data
 class Datastate:
     def __init__(self, model_states):
         self.position = model_states.position[:-1]
@@ -51,7 +56,7 @@ class Datastate:
         self.change_position = model_states.position[1:]-model_states.position[:-1]
         self.change_velocity = model_states.velocity[1:]-model_states.velocity[:-1]
 
-def main(N1=3, N2=1, dim=2, grid=False, saveat=100, runs=100, nconfig=1000, ifdrag=0):
+def main(N1=5, N2=1, dim=2, grid=False, saveat=100, runs=101, nconfig=1000, ifdrag=0):
 
     if N2 is None:
         N2 = N1
@@ -218,10 +223,12 @@ def main(N1=3, N2=1, dim=2, grid=False, saveat=100, runs=100, nconfig=1000, ifdr
 
         title = f"{N}-Spring random state {ind}"
         plt.title(title)
-        plt.savefig(_filename(title.replace(" ", "_")+".png"), dpi=300)
-        save_ovito(f"dataset_{ind}.ovito", [state for state in NVEStates(states)], lattice="")
+        plt.savefig(
+            _filename(title.replace(" ", "_")+".png"), dpi=300)
+        save_ovito(f"dataset_{ind}.data", [
+            state for state in NVEStates(states)], lattice="")
 
-        if ind > 10:
+        if ind >= 10:
             break
 
 fire.Fire(main)

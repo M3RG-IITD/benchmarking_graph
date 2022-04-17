@@ -40,7 +40,7 @@ config.update("jax_debug_nans", True)
 # jax.config.update('jax_platform_name', 'gpu')
 
 
-def main(N=2, dim=2, saveat=100, nconfig=1000, ifdrag=0, runs=101):
+def main(N=2, dim=2, saveat=100, nconfig=1000, ifdrag=0, runs=1000):
 
     tag = f"{N}-Pendulum-data"
     seed = 42

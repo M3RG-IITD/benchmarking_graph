@@ -48,7 +48,7 @@ def predition3(R, V, params, change_Acc, dt, mass, runs=1000, stride=10):
     # func = partial(force_fn, mass=mass)
     init, apply = nve3(params, change_Acc, dt)
     state = init(R, V, mass)
-    states = solve_dynamics2(state, apply, runs=runs, stride=stride)
+    states = solve_dynamics(state, apply, runs=runs, stride=stride)
     return states
 
 def solve_dynamics(init_state, apply, runs=100, stride=10):

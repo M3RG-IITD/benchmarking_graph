@@ -63,7 +63,7 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=2, epochs=3, seed=42, rname=False, traj = 4,
+def main(N=2, epochs=10000, seed=42, rname=False, traj = 4,
          dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001, datapoints=None, batch_size=1000):
 
     print("Configs: ")
@@ -465,13 +465,13 @@ def main(N=2, epochs=3, seed=42, rname=False, traj = 4,
 
         #return MSE(pred, jnp.concatenate([Rds,Vds], axis=2))
 
-    @jit
-    def loss_fn(params, Rs, Vs, Rds, Vds):
-        pred = v_change_R_V_(Rs, Vs, params)
-        return MSE(pred, jnp.concatenate([Rds,Vds], axis=2))
+    # @jit
+    # def loss_fn(params, Rs, Vs, Rds, Vds):
+    #     pred = v_change_R_V_(Rs, Vs, params)
+    #     return MSE(pred, jnp.concatenate([Rds,Vds], axis=2))
 
     @jit
-    def loss_fn1(params, Rs, Vs, simR, simV):
+    def loss_fn(params, Rs, Vs, simR, simV):
         #simR, simV = v_forward_sim(Rs,Vs)
         SimR = jnp.split(simR,traj+1,axis=1)
         SimV = jnp.split(simV,traj+1,axis=1)
@@ -576,6 +576,8 @@ def main(N=2, epochs=3, seed=42, rname=False, traj = 4,
     # Rst = Rst[:100]
     # Vst = Vst[:100]
 
+    params = pickle.load(open("../results/2-Pendulum-full-graph-traj/0/trained_model_0_1_1000.dil", "rb"))[0]
+
     print("simulating...")
 
     simR, simV = v_forward_sim(Rs,Vs)
@@ -605,28 +607,32 @@ def main(N=2, epochs=3, seed=42, rname=False, traj = 4,
         count = 0
         for data in zip(bRs, bVs, bsimR, bsimV):
             optimizer_step += 1
-            curr_R = data[0]
-            curr_V = data[1]
-            xsimR = data[2]
-            xsimV = data[3]
-            xSimR = jnp.split(xsimR,traj+1,axis=1)
-            xSimV = jnp.split(xsimV,traj+1,axis=1)
+            # curr_R = data[0]
+            # curr_V = data[1]
+            # xsimR = data[2]
+            # xsimV = data[3]
+            # xSimR = jnp.split(xsimR,traj+1,axis=1)
+            # xSimV = jnp.split(xsimV,traj+1,axis=1)
 
-            #print(xSimR[1].shape)
+            # #print(xSimR[1].shape)
 
-            #print(curr_R.shape)
-            for i in range(traj):
+            # #print(curr_R.shape)
+            # for i in range(traj):
 
-                opt_state, params, l_ = step(
-                    optimizer_step, (opt_state, params, 0), curr_R,curr_V, jnp.squeeze(xSimR[i+1])-curr_R,jnp.squeeze(xSimV[i+1])-curr_V)
+            #     opt_state, params, l_ = step(
+            #         optimizer_step, (opt_state, params, 0), curr_R,curr_V, jnp.squeeze(xSimR[i+1])-curr_R,jnp.squeeze(xSimV[i+1])-curr_V)
                 
-                pred = v_change_R_V_(curr_R, curr_V, params)
-                Rd_pred, Vd_pred = jnp.split(pred,2,axis=2)
-                curr_R = curr_R + Rd_pred
-                curr_V = curr_V + Vd_pred
+            #     pred = v_change_R_V_(curr_R, curr_V, params)
+            #     Rd_pred, Vd_pred = jnp.split(pred,2,axis=2)
+            #     curr_R = curr_R + Rd_pred
+            #     curr_V = curr_V + Vd_pred
                 
-                l += l_
-            l=l/traj
+            #     l += l_
+            # l=l/traj
+            #count+=1
+            opt_state, params, l_ = step(
+                optimizer_step, (opt_state, params, 0), *data)
+            l += l_
             count+=1
 
         #break
@@ -635,7 +641,7 @@ def main(N=2, epochs=3, seed=42, rname=False, traj = 4,
         l = l/count
         larray += [l]
         if epoch % 1 == 0:
-            ltarray += [loss_fn1(params, Rst, Vst,simRt, simVt)]
+            ltarray += [loss_fn(params, Rst, Vst,simRt, simVt)]
             print(
                 f"Epoch: {epoch}/{epochs} Loss (MSE):  test={ltarray[-1]}, train={larray[-1]}")
         if epoch % 10 == 0:

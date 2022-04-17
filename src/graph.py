@@ -821,7 +821,7 @@ def cal_graph_modified(params, graph, eorder=None, mpass=1,
 
     def node_to_T_fn(nodes):
         #return ke(nodes["node_vel_embed"]).sum()
-        print(nodes["node_embed"].shape[0])
+#        print(nodes["node_embed"].shape[0])
         timecolumn = jnp.full((nodes["node_embed"].shape[0],1),timestep)
         return ke(jnp.hstack([nodes["node_embed"],timecolumn]))
 

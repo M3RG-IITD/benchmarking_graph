@@ -51,7 +51,7 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=2, dim=2, dt=1.0e-5, ifdrag=0, saveovito=0, semilog=1, stride=1000, seed=42, rname=0, runs=10, maxtraj=1, plotthings=False):
+def main(N=2, dim=2, dt=1.0e-5, ifdrag=0, saveovito=0, semilog=1, stride=1000, seed=100, rname=0, runs=10, maxtraj=1, plotthings=False):
 
     print("Configs: ")
     pprint(dt, stride,

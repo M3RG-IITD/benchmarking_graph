@@ -63,7 +63,7 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=2, epochs=2000, seed=42, rname=False,
+def main(N=2, epochs=10000, seed=42, rname=False,
          dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001, datapoints=None, batch_size=1000):
 
     print("Configs: ")

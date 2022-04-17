@@ -177,17 +177,27 @@ def nve3(params, change_Acc, dt: float) -> Simulator:
     Returns:
       See above.
     """
+    dt_2 = 0.5 * dt ** 2
 
     def init_fun(R: Array, V: Array, mass=f32(1.0), **kwargs) -> NVEState:
         mass = quantity.canonicalize_mass(mass)
-        return NVEState(R, V, V, mass)
+        return NVEState(R, V, change_Acc(R,V,params), mass)
 
     def apply_fun(state: NVEState, **kwargs) -> NVEState:
         R, V, F, mass = dataclasses.astuple(state)
-        A = F/mass
-        A_prime = change_Acc(R, V, params)
-        R = R + V * dt + f32(0.5) * A * dt * dt
+        A = F / mass
+        dR = V * dt + A * dt_2
+        R = R + dR
+        #R, V = shift_fn(R, dR, V)
+        F = change_Acc(R, V, params)
+        A_prime = F / mass
         V = V + f32(0.5) * (A + A_prime) * dt
-        return NVEState(R, V, A_prime * mass, mass)
+        return NVEState(R, V, F, mass)
+        # R, V, F, mass = dataclasses.astuple(state)
+        # A = F/mass
+        # A_prime = change_Acc(R, V, params)
+        # R = R + V * dt + f32(0.5) * A * dt * dt
+        # V = V + f32(0.5) * (A + A_prime) * dt
+        # return NVEState(R, V, A_prime * mass, mass)
 
     return init_fun, apply_fun

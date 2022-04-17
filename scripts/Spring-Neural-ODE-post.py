@@ -17,8 +17,8 @@ from jax.experimental import optimizers
 from jax_md import space
 from pyexpat import model
 from shadow.plot import *
-# from sklearn.metrics import r2_score
-# from sympy import fu
+#from sklearn.metrics import r2_score
+#from sympy import fu
 
 from psystems.nsprings import (chain, edge_order, get_connections,
                                get_fully_connected_senders_and_receivers,
@@ -34,7 +34,6 @@ from src import lnn
 from src.graph import *
 from src.lnn import acceleration, accelerationFull, accelerationTV
 from src.md import *
-from src.md import predition2
 from src.models import MSE, initialize_mlp
 from src.nve import NVEStates, nve
 from src.utils import *
@@ -63,7 +62,7 @@ def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid
            namespace=locals())
 
     PSYS = f"{N}-Spring"
-    TAG = f"full-graph"
+    TAG = f"lgnn"
     out_dir = f"../results"
 
     randfilename = datetime.now().strftime(
@@ -257,35 +256,37 @@ def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid
         n_edge=jnp.array([senders.shape[0]]),
         globals={})
 
-    def energy_fn(species):
-        # senders, receivers = [np.array(i)
-        #                       for i in get_fully_connected_senders_and_receivers(N)]
-        state_graph = jraph.GraphsTuple(nodes={
-            "position": R,
-            "velocity": V,
-            "type": species
-        },
-            edges={},
-            senders=senders,
-            receivers=receivers,
-            n_node=jnp.array([R.shape[0]]),
-            n_edge=jnp.array([senders.shape[0]]),
-            globals={})
+    # def energy_fn(species):
+    #     # senders, receivers = [np.array(i)
+    #     #                       for i in get_fully_connected_senders_and_receivers(N)]
+    #     state_graph = jraph.GraphsTuple(nodes={
+    #         "position": R,
+    #         "velocity": V,
+    #         "type": species
+    #     },
+    #         edges={},
+    #         senders=senders,
+    #         receivers=receivers,
+    #         n_node=jnp.array([R.shape[0]]),
+    #         n_edge=jnp.array([senders.shape[0]]),
+    #         globals={})
 
-        def apply(R, V, params):
-            state_graph.nodes.update(position=R)
-            state_graph.nodes.update(velocity=V)
-            return L_energy_fn(params, state_graph)
-        return apply
+    #     def apply(R, V, params):
+    #         state_graph.nodes.update(position=R)
+    #         state_graph.nodes.update(velocity=V)
+    #         return L_energy_fn(params, state_graph)
+    #     return apply
 
-    # apply_fn = energy_fn(species)
-    # v_apply_fn = vmap(apply_fn, in_axes=(None, 0))
+    
+
     def L_change_fn(params, graph):
-        g, change = cal_graph(params, graph, mpass=mpass, eorder=eorder,
-                                useT=True, useonlyedge=True)
+        g, change = cal_graph_modified(params, graph, eorder=eorder,
+                                useT=True)
         return change
 
     def change_fn(species):
+        #senders, receivers = [np.array(i)
+        #                      for i in pendulum_connections(R.shape[0])]
         state_graph = jraph.GraphsTuple(nodes={
             "position": R,
             "velocity": V,
@@ -304,20 +305,18 @@ def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid
             return L_change_fn(params, state_graph)
         return apply
 
+    #apply_fn = energy_fn(species)
     apply_fn = change_fn(species)
     v_apply_fn = vmap(apply_fn, in_axes=(None, 0))
 
     def Lmodel(x, v, params): return apply_fn(x, v, params["L"])
 
-    def change_R_V(N, dim):
-
+    def change_Acc(N, dim):
         def fn(Rs, Vs, params):
             return Lmodel(Rs, Vs, params)
         return fn
     
-    change_R_V_ = change_R_V(N, dim)
-
-    v_change_R_V_ = vmap(change_R_V_, in_axes=(0, 0, None))
+    change_Acc_ = change_Acc(N, dim)
 
     def nndrag(v, params):
         return - jnp.abs(models.forward_pass(params, v.reshape(-1), activation_fn=models.SquarePlus)) * v
@@ -349,13 +348,14 @@ def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid
     # sim_model = get_forward_sim(
     #     params=params, force_fn=force_fn_model, runs=runs)
 
-    def get_forward_sim_full_graph_network(params = None, run = runs):
+    def get_forward_sim_neural_ode(params = None, run = runs):
         @jit
         def fn(R, V):
-            return predition2(R,  V, params, change_R_V_, dt, masses, stride=stride, runs=run)
+            #return predition(R,  V, params, change_Acc_, shift, dt, masses, stride=stride, runs=runs)
+            return predition3(R,  V, params, change_Acc_, dt, masses, stride=stride, runs=run)
         return fn
 
-    sim_model = get_forward_sim_full_graph_network(params=params, run=runs)
+    sim_model = get_forward_sim_neural_ode(params=params, run=runs)
 
     ################################################
     ############## forward simulation ##############
@@ -387,7 +387,7 @@ def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid
         return fn
 
     Es_fn = cal_energy_fn(lag=Lactual, params=None)
-    # Es_pred_fn = cal_energy_fn(lag=Lmodel, params=params)
+    Es_pred_fn = cal_energy_fn(lag=Lmodel, params=params)
 
     def net_force_fn(force=None, params=None):
         @jit
@@ -435,9 +435,9 @@ def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid
             pred_traj = sim_model(R, V)
 
             if saveovito:
-                save_ovito(f"pred_{ind}.data", [
+                save_ovito(f"pred_{ind}.ovito", [
                     state for state in NVEStates(pred_traj)], lattice="")
-                save_ovito(f"actual_{ind}.data", [
+                save_ovito(f"actual_{ind}.ovito", [
                     state for state in NVEStates(actual_traj)], lattice="")
 
             trajectories += [(actual_traj, pred_traj)]
@@ -449,9 +449,9 @@ def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid
                     print(f"plotting energy ({key})...")
 
                     Es = Es_fn(traj)
-                    Es_pred = Es_fn(traj)
+                    Es_pred = Es_pred_fn(traj)
 
-                    # Es_pred = Es_pred - Es_pred[0] + Es[0]
+                    Es_pred = Es_pred - Es_pred[0] + Es[0]
 
                     fig, axs = panel(1, 2, figsize=(20, 5))
                     axs[0].plot(Es, label=["PE", "KE", "L", "TE"],
@@ -465,7 +465,7 @@ def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid
                     ylabel("Energy", ax=axs[0])
                     ylabel("Energy", ax=axs[1])
 
-                    title = f"Full Graph {N}-Spring Exp {ind}"
+                    title = f"LGNN {N}-Spring Exp {ind}"
                     plt.title(title)
                     plt.savefig(_filename(title.replace(
                         " ", "-")+f"_{key}_traj.png"))
@@ -532,13 +532,13 @@ def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid
             ylabel("Energy", ax=axs[0])
             ylabel("Energy", ax=axs[1])
 
-            title = f"Full Graph {N}-Spring Exp {ind} pred traj"
+            title = f"LGNN {N}-Spring Exp {ind} pred traj"
             axs[1].set_title(title)
-            title = f"Full Graph {N}-Spring Exp {ind} actual traj"
+            title = f"LGNN {N}-Spring Exp {ind} actual traj"
             axs[0].set_title(title)
 
             plt.savefig(
-                _filename(f"Full Graph {N}-Spring Exp {ind}".replace(" ", "-")+f"_actualH.png"))
+                _filename(f"LGNN {N}-Spring Exp {ind}".replace(" ", "-")+f"_actualH.png"))
         except:
             if skip < 20:
                 skip += 1
@@ -548,7 +548,6 @@ def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid
     def make_plots(nexp, key, yl="Err"):
         print(f"Plotting err for {key}")
         fig, axs = panel(1, 1)
-
         for i in range(len(nexp[key])):
             if semilog:
                 plt.semilogy(nexp[key][i].flatten())

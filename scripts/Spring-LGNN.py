@@ -4,6 +4,7 @@
 
 import json
 import sys
+import os
 from datetime import datetime
 from functools import partial, wraps
 from statistics import mode
@@ -15,10 +16,11 @@ import numpy as np
 from jax import jit, random, value_and_grad, vmap
 from jax.experimental import optimizers
 from jax_md import space
-from shadow.plot import *
-from sklearn.metrics import r2_score
-from sympy import LM
-from torch import batch_norm_gather_stats_with_counts
+import matplotlib.pyplot as plt
+# from shadow.plot import *
+# from sklearn.metrics import r2_score
+# from sympy import LM
+# from torch import batch_norm_gather_stats_with_counts
 
 from psystems.nsprings import (chain, edge_order, get_connections,
                                get_fully_connected_senders_and_receivers,
@@ -52,7 +54,7 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=3, epochs=10000, seed=42, rname=True, saveat=10,
+def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
          dt=1.0e-3, ifdrag=0, stride=100, trainm=1, grid=False, mpass=1, lr=0.001, withdata=None, datapoints=None, batch_size=1000):
 
     print("Configs: ")
@@ -380,17 +382,19 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10,
     last_loss = 1000
     for epoch in range(epochs):
         l = 0.0
+        count = 0
         for data in zip(bRs, bVs, bFs):
             optimizer_step += 1
             opt_state, params, l_ = step(
                 optimizer_step, (opt_state, params, 0), *data)
             l += l_
+            count += 1
 
-        opt_state, params, l_ = step(
-            optimizer_step, (opt_state, params, 0), Rs, Vs, Fs)
-
-        if epoch % saveat == 0:
-            larray += [l_]
+        # opt_state, params, l_ = step(
+        #     optimizer_step, (opt_state, params, 0), Rs, Vs, Fs)
+        l = l/count
+        if epoch % 1 == 0:
+            larray += [l]
             ltarray += [loss_fn(params, Rst, Vst, Fst)]
             print(
                 f"Epoch: {epoch}/{epochs} Loss (MSE):  train={larray[-1]}, test={ltarray[-1]}")
@@ -402,16 +406,16 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10,
                 "ifdrag": ifdrag,
                 "trainm": trainm,
             }
-            savefile(f"lgnn_trained_model_{ifdrag}_{trainm}.dil",
+            savefile(f"trained_model_{ifdrag}_{trainm}.dil",
                      params, metadata=metadata)
             savefile(f"loss_array_{ifdrag}_{trainm}.dil",
                      (larray, ltarray), metadata=metadata)
             if last_loss > larray[-1]:
                 last_loss = larray[-1]
-                savefile(f"lgnn_trained_model_{ifdrag}_{trainm}_low.dil",
+                savefile(f"trained_model_{ifdrag}_{trainm}_low.dil",
                          params, metadata=metadata)
 
-    fig, axs = panel(1, 1)
+    fig, axs = plt.subplots(1, 1)
     plt.semilogy(larray, label="Training")
     plt.semilogy(ltarray, label="Test")
     plt.xlabel("Epoch")
@@ -427,10 +431,10 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10,
         "trainm": trainm,
     }
     params = get_params(opt_state)
-    savefile(f"lgnn_trained_model_{ifdrag}_{trainm}.dil",
-             params, metadata=metadata)
+    savefile(f"trained_model_{ifdrag}_{trainm}.dil",
+            params, metadata=metadata)
     savefile(f"loss_array_{ifdrag}_{trainm}.dil",
-             (larray, ltarray), metadata=metadata)
+            (larray, ltarray), metadata=metadata)
 
 
 fire.Fire(main)

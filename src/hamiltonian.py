@@ -110,3 +110,26 @@ def get_constraints(N, Dim, phi_, mass=None):
 
 
 def z(x, p): return jnp.vstack([x, p])
+
+def _T(p, mass=jnp.array([1.0])):
+    if len(mass) != len(p):
+        mass = mass[0]*jnp.ones((len(p)))
+    out = (1/mass)*jnp.square(p).sum(axis=1)
+    return 0.5*out.sum()
+
+
+
+def SPRING(x, stiffness=1.0, length=1.0):
+    """Linear spring, v=0.5kd^2.
+    
+    :param x: Inter-particle distance
+    :type x: float
+    :param stiffness: Spring stiffness constant, defaults to 1.0
+    :type stiffness: float, optional
+    :param length: Equillibrium length, defaults to 1.0
+    :type length: float, optional
+    :return: energy
+    :rtype: float
+    """
+    x_ = jnp.linalg.norm(x, keepdims=True)
+    return 0.5*stiffness*(x_ - length)**2

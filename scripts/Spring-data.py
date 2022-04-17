@@ -43,7 +43,7 @@ config.update("jax_debug_nans", True)
 # jax.config.update('jax_platform_name', 'gpu')
 
 
-def main(N1=3, N2=1, dim=2, grid=False, saveat=100, runs=100, nconfig=1000, ifdrag=0):
+def main(N1=5, N2=1, dim=2, grid=False, saveat=100, runs=100, nconfig=1000, ifdrag=0):
 
     if N2 is None:
         N2 = N1
@@ -212,10 +212,10 @@ def main(N1=3, N2=1, dim=2, grid=False, saveat=100, runs=100, nconfig=1000, ifdr
         plt.title(title)
         plt.savefig(
             _filename(title.replace(" ", "_")+".png"), dpi=300)
-        save_ovito(f"dataset_{ind}.ovito", [
+        save_ovito(f"dataset_{ind}.data", [
             state for state in NVEStates(states)], lattice="")
 
-        if ind > 10:
+        if ind >= 10:
             break
 
 

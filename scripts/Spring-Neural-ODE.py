@@ -4,7 +4,6 @@
 
 import json
 import sys
-import os
 from datetime import datetime
 from functools import partial, wraps
 from statistics import mode
@@ -16,8 +15,8 @@ import numpy as np
 from jax import jit, random, value_and_grad, vmap
 from jax.experimental import optimizers
 from jax_md import space
-# from shadow.plot import *
 import matplotlib.pyplot as plt
+# from shadow.plot import *
 # from sklearn.metrics import r2_score
 # from sympy import LM
 # from torch import batch_norm_gather_stats_with_counts
@@ -31,6 +30,7 @@ sys.path.append(MAINPATH)  # nopep8
 
 import jraph
 import src
+import os
 from jax.config import config
 from src import lnn
 from src.graph import *
@@ -75,7 +75,7 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
         "%m-%d-%Y_%H-%M-%S") + f"_{datapoints}"
 
     PSYS = f"{N}-Spring"
-    TAG = f"full-graph"
+    TAG = f"Neural-ODE"
     out_dir = f"../results"
 
     def _filename(name, tag=TAG):
@@ -144,7 +144,6 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
     allFs = Fs[mask]
     allRds = Rds[mask]
     allVds = Vds[mask]
-
 
     Ntr = int(0.75*len(Rs))
     Nts = len(Rs) - Ntr
@@ -230,17 +229,17 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
     def mlp(in_, out_, key, **kwargs):
         return initialize_mlp(get_layers(in_, out_), key, **kwargs)
 
-    fneke_params = initialize_mlp([Oh, Nei], key)
-    fne_params = initialize_mlp([Oh+Nf*2, Nei], key)
+    fneke_params = initialize_mlp([Oh, Nei], key)#not used
+    fne_params = initialize_mlp([Oh+Nf*2, Nei], key)#intial node embedding
 
-    fb_params = mlp(Ef, Eei, key)
-    fv_params = mlp(Nei+Eei, Nei, key)
-    fe_params = mlp(Nei, Eei, key)
+    fb_params = mlp(Ef, Eei, key)#initial edge embedding
+    fv_params = mlp(Nei+Eei, Nei, key)#update node
+    fe_params = mlp(Nei, Eei, key)#update edge
 
-    ff1_params = mlp(Eei, 1, key)
-    ff2_params = mlp(Nei, 1, key)
-    ff3_params = mlp(dim+Nei, 1, key)
-    ke_params = initialize_mlp([Nei+1, 32, 32, 4], key, affine=[True])
+    ff1_params = mlp(Eei, 1, key)#not used
+    ff2_params = mlp(Nei, 1, key)#not used
+    ff3_params = mlp(dim+Nei, 1, key)#not used
+    ke_params = initialize_mlp([1+Nei, 32, 32, 2], key, affine=[True])#final
 
     Lparams = dict(fb=fb_params,
                    fv=fv_params,
@@ -286,33 +285,33 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
 
     # L_energy_fn(Lparams, state_graph)
 
-    def energy_fn(species):
-        state_graph = jraph.GraphsTuple(nodes={
-            "position": R,
-            "velocity": V,
-            "type": species
-        },
-            edges={},
-            senders=senders,
-            receivers=receivers,
-            n_node=jnp.array([R.shape[0]]),
-            n_edge=jnp.array([senders.shape[0]]),
-            globals={})
+    # def energy_fn(species):
+    #     state_graph = jraph.GraphsTuple(nodes={
+    #         "position": R,
+    #         "velocity": V,
+    #         "type": species
+    #     },
+    #         edges={},
+    #         senders=senders,
+    #         receivers=receivers,
+    #         n_node=jnp.array([R.shape[0]]),
+    #         n_edge=jnp.array([senders.shape[0]]),
+    #         globals={})
 
-        def apply(R, V, params):
-            state_graph.nodes.update(position=R)
-            state_graph.nodes.update(velocity=V)
-            return L_energy_fn(params, state_graph)
-        return apply
+    #     def apply(R, V, params):
+    #         state_graph.nodes.update(position=R)
+    #         state_graph.nodes.update(velocity=V)
+    #         return L_energy_fn(params, state_graph)
+    #     return apply
 
-    # apply_fn = energy_fn(species)
-    # v_apply_fn = vmap(apply_fn, in_axes=(None, 0))
     def L_change_fn(params, graph):
         g, change = cal_graph_modified(params, graph, eorder=eorder,
                                 useT=True)
         return change
-
+    
     def change_fn(species):
+        # senders, receivers = [np.array(i)
+        #                       for i in pendulum_connections(R.shape[0])]
         state_graph = jraph.GraphsTuple(nodes={
             "position": R,
             "velocity": V,
@@ -331,6 +330,7 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
             return L_change_fn(params, state_graph)
         return apply
 
+    #apply_fn = energy_fn(species)
     apply_fn = change_fn(species)
     v_apply_fn = vmap(apply_fn, in_axes=(None, 0))
 
@@ -360,28 +360,23 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
                                              non_conservative_forces=drag)
     v_acceleration_fn_model = vmap(acceleration_fn_model, in_axes=(0, 0, None))
 
-    def change_R_V(N, dim):
-
+    def change_Acc(N, dim):
         def fn(Rs, Vs, params):
             return Lmodel(Rs, Vs, params)
         return fn
     
-    change_R_V_ = change_R_V(N, dim)
+    change_Acc = change_Acc(N, dim)
 
-    v_change_R_V_ = vmap(change_R_V_, in_axes=(0, 0, None))
+    v_acceleration_neural_ode = vmap(change_Acc, in_axes=(0, 0, None))
 
     ################################################
     ################## ML Training #################
     ################################################
 
-    # @jit
-    # def loss_fn(params, Rs, Vs, Fs):
-    #     pred = v_acceleration_fn_model(Rs, Vs, params)
-    #     return MSE(pred, Fs)
     @jit
-    def loss_fn(params, Rs, Vs, Rds, Vds):
-        pred = v_change_R_V_(Rs, Vs, params)
-        return MSE(pred, jnp.concatenate([Rds,Vds], axis=2))
+    def loss_fn(params, Rs, Vs, Fs):
+        pred = v_acceleration_neural_ode(Rs, Vs, params)
+        return MSE(pred, Fs)
 
     def gloss(*args):
         return value_and_grad(loss_fn)(*args)
@@ -428,9 +423,7 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
                                    for i in range(nbatches)])]
         return newargs
 
-    # bRs, bVs, bFs = batching(Rs, Vs, Fs,
-    #                          size=min(len(Rs), batch_size))
-    bRs, bVs, bRds, bVds = batching(Rs, Vs, Rds, Vds,
+    bRs, bVs, bFs = batching(Rs, Vs, Fs,
                              size=min(len(Rs), batch_size))
 
     print(f"training ...")
@@ -444,28 +437,21 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
     for epoch in range(epochs):
         l = 0.0
         count = 0
-        for data in zip(bRs, bVs, bRds, bVds):
+        for data in zip(bRs, bVs, bFs):
             optimizer_step += 1
             opt_state, params, l_ = step(
                 optimizer_step, (opt_state, params, 0), *data)
             l += l_
-            count += 1
+            count +=1
 
         # opt_state, params, l_ = step(
         #     optimizer_step, (opt_state, params, 0), Rs, Vs, Fs)
-
-        # if epoch % 1 == 0:
-        #     larray += [l_]
-        #     ltarray += [loss_fn(params, Rst, Vst, Fst)]
-        #     print(
-        #         f"Epoch: {epoch}/{epochs} Loss (MSE):  train={larray[-1]}, test={ltarray[-1]}")
-        l = l/count
+        l=l/count
         larray += [l]
         if epoch % 1 == 0:
-            ltarray += [loss_fn(params, Rst, Vst, Rdst, Vdst)]
+            ltarray += [loss_fn(params, Rst, Vst, Fst)]
             print(
-                f"Epoch: {epoch}/{epochs} Loss (MSE):  test={ltarray[-1]}, train={larray[-1]}")
-
+                f"Epoch: {epoch}/{epochs} Loss (MSE):  train={larray[-1]}, test={ltarray[-1]}")
         if epoch % saveat == 0:
             metadata = {
                 "savedat": epoch,

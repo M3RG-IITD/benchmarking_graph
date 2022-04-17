@@ -17,8 +17,8 @@ from jax.experimental import optimizers
 from jax_md import space
 from pyexpat import model
 from shadow.plot import *
-from sklearn.metrics import r2_score
-from sympy import fu
+# from sklearn.metrics import r2_score
+# from sympy import fu
 
 from psystems.nsprings import (chain, edge_order, get_connections,
                                get_fully_connected_senders_and_receivers,
