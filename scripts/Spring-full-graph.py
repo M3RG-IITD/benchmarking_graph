@@ -63,7 +63,7 @@ class Datastate:
         self.change_position = model_states.position[1:]-model_states.position[:-1]
         self.change_velocity = model_states.velocity[1:]-model_states.velocity[:-1]
 
-def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
+def main(N=5, epochs=3, seed=42, rname=False, saveat=10,
          dt=1.0e-3, ifdrag=0, stride=100, trainm=1, grid=False, mpass=1, lr=0.001, withdata=None, datapoints=None, batch_size=1000):
 
     print("Configs: ")
@@ -284,7 +284,7 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
         n_edge=jnp.array([senders.shape[0]]),
         globals={})
 
-    # L_energy_fn(Lparams, state_graph)
+    L_energy_fn(Lparams, state_graph)
 
     def energy_fn(species):
         state_graph = jraph.GraphsTuple(nodes={

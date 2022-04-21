@@ -3,7 +3,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 from jax.experimental import ode
-# from shadow.plot import panel
+from shadow.plot import panel
 
 
 def hamiltonian(x, p, params):

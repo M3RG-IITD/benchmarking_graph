@@ -15,8 +15,7 @@ import numpy as np
 from jax import jit, random, value_and_grad, vmap
 from jax.experimental import optimizers
 from jax_md import space
-import matplotlib.pyplot as plt
-# from shadow.plot import *
+from shadow.plot import *
 # from sklearn.metrics import r2_score
 # from sympy import LM
 # from torch import batch_norm_gather_stats_with_counts
@@ -30,7 +29,6 @@ sys.path.append(MAINPATH)  # nopep8
 
 import jraph
 import src
-import os
 from jax.config import config
 from src import lnn
 from src.graph import *
@@ -53,17 +51,8 @@ def pprint(*args, namespace=globals()):
     for arg in args:
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
-class Datastate:
-    def __init__(self, model_states):
-        self.position = model_states.position[:-1]
-        self.velocity = model_states.velocity[:-1]
-        self.force = model_states.force[:-1]
-        self.mass = model_states.mass[:-1]
-        self.index = 0
-        self.change_position = model_states.position[1:]-model_states.position[:-1]
-        self.change_velocity = model_states.velocity[1:]-model_states.velocity[:-1]
 
-def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
+def main(N=3, epochs=10000, seed=42, rname=True, saveat=10,
          dt=1.0e-3, ifdrag=0, stride=100, trainm=1, grid=False, mpass=1, lr=0.001, withdata=None, datapoints=None, batch_size=1000):
 
     print("Configs: ")
@@ -75,13 +64,12 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
         "%m-%d-%Y_%H-%M-%S") + f"_{datapoints}"
 
     PSYS = f"{N}-Spring"
-    TAG = f"Neural-ODE"
+    TAG = f"lgnn"
     out_dir = f"../results"
 
     def _filename(name, tag=TAG):
-        # rstring = randfilename if (rname and (tag != "data")) else (
-        #     "0" if (tag == "data") or (withdata == None) else f"0_{withdata}")
-        rstring = 0 if (tag != "data") else 1
+        rstring = randfilename if (rname and (tag != "data")) else (
+            "0" if (tag == "data") or (withdata == None) else f"0_{withdata}")
         filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
@@ -131,19 +119,15 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
     species = jnp.zeros(N, dtype=int)
     masses = jnp.ones(N)
 
-    Rs, Vs, Fs, Rds, Vds = States_modified().fromlist(dataset_states).get_array()
+    Rs, Vs, Fs = States().fromlist(dataset_states).get_array()
     Rs = Rs.reshape(-1, N, dim)
     Vs = Vs.reshape(-1, N, dim)
     Fs = Fs.reshape(-1, N, dim)
-    Rds = Rds.reshape(-1, N, dim)
-    Vds = Vds.reshape(-1, N, dim)
 
     mask = np.random.choice(len(Rs), len(Rs), replace=False)
     allRs = Rs[mask]
     allVs = Vs[mask]
     allFs = Fs[mask]
-    allRds = Rds[mask]
-    allVds = Vds[mask]
 
     Ntr = int(0.75*len(Rs))
     Nts = len(Rs) - Ntr
@@ -151,14 +135,10 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
     Rs = allRs[:Ntr]
     Vs = allVs[:Ntr]
     Fs = allFs[:Ntr]
-    Rds = allRds[:Ntr]
-    Vds = allVds[:Ntr]
 
     Rst = allRs[Ntr:]
     Vst = allVs[Ntr:]
     Fst = allFs[Ntr:]
-    Rdst = allRds[Ntr:]
-    Vdst = allVds[Ntr:]
 
     ################################################
     ################## SYSTEM ######################
@@ -448,7 +428,8 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
         #     optimizer_step, (opt_state, params, 0), Rs, Vs, Fs)
         l=l/count
         larray += [l]
-        if epoch % 1 == 0:
+        if epoch % saveat == 0:
+            
             ltarray += [loss_fn(params, Rst, Vst, Fst)]
             print(
                 f"Epoch: {epoch}/{epochs} Loss (MSE):  train={larray[-1]}, test={ltarray[-1]}")
@@ -460,17 +441,17 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
                 "ifdrag": ifdrag,
                 "trainm": trainm,
             }
-            savefile(f"trained_model_{ifdrag}_{trainm}.dil",
+            savefile(f"lgnn_trained_model_{ifdrag}_{trainm}.dil",
                      params, metadata=metadata)
             savefile(f"loss_array_{ifdrag}_{trainm}.dil",
                      (larray, ltarray), metadata=metadata)
             if last_loss > larray[-1]:
                 last_loss = larray[-1]
-                savefile(f"trained_model_{ifdrag}_{trainm}_low.dil",
+                savefile(f"lgnn_trained_model_{ifdrag}_{trainm}_low.dil",
                          params, metadata=metadata)
 
             plt.clf()
-            fig, axs = plt.subplots(1, 1)
+            fig, axs = panel(1, 1)
             plt.semilogy(larray, label="Training")
             plt.semilogy(ltarray, label="Test")
             plt.xlabel("Epoch")
@@ -486,7 +467,7 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
         "trainm": trainm,
     }
     params = get_params(opt_state)
-    savefile(f"trained_model_{ifdrag}_{trainm}.dil",
+    savefile(f"lgnn_trained_model_{ifdrag}_{trainm}.dil",
              params, metadata=metadata)
     savefile(f"loss_array_{ifdrag}_{trainm}.dil",
              (larray, ltarray), metadata=metadata)
