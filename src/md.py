@@ -30,6 +30,13 @@ def predition(R, V, params, force_fn, shift_fn, dt, mass,  runs=1000, stride=10)
     states = solve_dynamics(state, apply, runs=runs, stride=stride)
     return states
 
+def predition4(R, V, params, force_fn, shift_fn, dt, mass,  runs=1000, stride=10):
+    func = partial(force_fn, mass=mass)
+    init, apply = nve4(lambda R, V: func(R, V, params), shift_fn, dt)
+    state = init(R, V, mass)
+    states = solve_dynamics(state, apply, runs=runs, stride=stride)
+    return states
+
 # def predition(R, V, params, force_fn, shift_fn, dt, mass,  runs=1000, stride=10):
 #     func = partial(force_fn, mass=mass)
 #     init, apply = nve(lambda R, V: func(R, V, params), shift_fn, dt)

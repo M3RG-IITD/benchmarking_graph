@@ -4,6 +4,7 @@
 
 import json
 import sys
+import os
 from datetime import datetime
 from functools import partial, wraps
 from statistics import mode
@@ -51,8 +52,17 @@ def pprint(*args, namespace=globals()):
     for arg in args:
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
+class Datastate:
+    def __init__(self, model_states):
+        self.position = model_states.position[:-1]
+        self.velocity = model_states.velocity[:-1]
+        self.force = model_states.force[:-1]
+        self.mass = model_states.mass[:-1]
+        self.index = 0
+        self.change_position = model_states.position[1:]-model_states.position[:-1]
+        self.change_velocity = model_states.velocity[1:]-model_states.velocity[:-1]
 
-def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid=False, stride=100, ifdrag=0, seed=42, rname=0, saveovito=0, trainm=0, runs=10, semilog=1, maxtraj=1, plotthings=False, redo=0):
+def main(N=5, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=False, stride=100, ifdrag=0, seed=42, rname=0, saveovito=1, trainm=1, runs=200, semilog=1, maxtraj=10, plotthings=False, redo=0):
 
     if useN is None:
         useN = N
@@ -62,7 +72,7 @@ def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid
            namespace=locals())
 
     PSYS = f"{N}-Spring"
-    TAG = f"lgnn"
+    TAG = f"Neural-ODE"
     out_dir = f"../results"
 
     randfilename = datetime.now().strftime(
@@ -79,8 +89,9 @@ def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid
             psys = PSYS
         name = ".".join(name.split(".")[:-1]) + \
             part + name.split(".")[-1]
-        rstring = randfilename if (rname and (tag != "data")) else (
-            "0" if (tag == "data") or (withdata == None) else f"0_{withdata}")
+        # rstring = randfilename if (rname and (tag != "data")) else (
+        #     "1" if (tag == "data") or (withdata == None) else f"0_{withdata}")
+        rstring  = "0" if (tag != "data" ) else "1"
         filename_prefix = f"{out_dir}/{psys}-{tag}/{rstring}/"
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
@@ -343,7 +354,7 @@ def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid
         else:
             return acceleration_fn_model(R, V, params)*mass.reshape(-1, 1)
 
-    params = loadfile(f"lgnn_trained_model.dil", trained=useN)[0]
+    params = loadfile(f"trained_model.dil", trained=useN)[0]
 
     # sim_model = get_forward_sim(
     #     params=params, force_fn=force_fn_model, runs=runs)
@@ -414,13 +425,13 @@ def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid
 
     skip = 0
 
-    for ind in range(len(dataset_states)):
+    for ind in range(maxtraj):
         if ind > maxtraj+skip:
             break
 
         _ind = ind*runs
 
-        print(f"Simulating trajectory {ind}/{len(dataset_states)} ...")
+        print(f"Simulating trajectory {ind}/{maxtraj} ...")
 
         # R = full_traj[_ind].position
         # V = full_traj[_ind].velocity
@@ -435,9 +446,9 @@ def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid
             pred_traj = sim_model(R, V)
 
             if saveovito:
-                save_ovito(f"pred_{ind}.ovito", [
+                save_ovito(f"pred_{ind}.data", [
                     state for state in NVEStates(pred_traj)], lattice="")
-                save_ovito(f"actual_{ind}.ovito", [
+                save_ovito(f"actual_{ind}.data", [
                     state for state in NVEStates(actual_traj)], lattice="")
 
             trajectories += [(actual_traj, pred_traj)]
@@ -532,13 +543,13 @@ def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid
             ylabel("Energy", ax=axs[0])
             ylabel("Energy", ax=axs[1])
 
-            title = f"LGNN {N}-Spring Exp {ind} pred traj"
+            title = f"Neural ODE {N}-Spring Exp {ind} pred traj"
             axs[1].set_title(title)
-            title = f"LGNN {N}-Spring Exp {ind} actual traj"
+            title = f"Neural ODE {N}-Spring Exp {ind} actual traj"
             axs[0].set_title(title)
 
             plt.savefig(
-                _filename(f"LGNN {N}-Spring Exp {ind}".replace(" ", "-")+f"_actualH.png"))
+                _filename(f"Neural ODE {N}-Spring Exp {ind}".replace(" ", "-")+f"_actualH.png"))
         except:
             if skip < 20:
                 skip += 1
@@ -581,5 +592,13 @@ def main(N=3, dt=1.0e-3, useN=None, withdata=None, datapoints=100, mpass=1, grid
     make_plots(nexp, "Herr",
                yl=r"$\frac{||H(\hat{z})-H(z)||_2}{||H(\hat{z})||_2+||H(z)||_2}$")
 
+    gmean_zerr = jnp.exp( jnp.log(jnp.array(nexp["Zerr"])).mean(axis=0) )
+    gmean_herr = jnp.exp( jnp.log(jnp.array(nexp["Herr"])).mean(axis=0) )
+
+    np.savetxt("../Spring-zerr/gnode1.txt", gmean_zerr, delimiter = "\n")
+    np.savetxt("../Spring-herr/gnode1.txt", gmean_herr, delimiter = "\n")
 
 fire.Fire(main)
+
+
+

@@ -61,6 +61,8 @@ def batch_forward(params, x, activation_fn=SquarePlus):
 def MSE(y_act, y_pred):
     return jnp.mean(jnp.square(y_pred - y_act))
 
+def MME(y_act, y_pred):
+    return jnp.mean(jnp.absolute(y_pred - y_act))
 
 def batch_MSE(ys_act, ys_pred):
     return vmap(MSE, in_axes=(0, 0), out_axes=0)(ys_act, ys_pred)

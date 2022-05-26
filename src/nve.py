@@ -124,6 +124,53 @@ def nve(energy_or_force_fn: Callable[..., Array],
 
     return init_fun, apply_fun
 
+def nve4(energy_or_force_fn: Callable[..., Array],
+        shift_fn: ShiftFn,
+        dt: float) -> Simulator:
+    """Simulates a system in the NVE ensemble.
+    Samples from the microcanonical ensemble in which the number of particles
+    (N), the system volume (V), and the energy (E) are held constant. We use a
+    standard velocity verlet integration scheme.
+    Args:
+      energy_or_force: A function that produces either an energy or a force from
+        a set of particle positions specified as an ndarray of shape
+        [n, spatial_dimension].
+      shift_fn: A function that displaces positions, R, by an amount dR. Both R
+        and dR should be ndarrays of shape [n, spatial_dimension].
+      dt: Floating point number specifying the timescale (step size) of the
+        simulation.
+      quant: Either a quantity.Energy or a quantity.Force specifying whether
+        energy_or_force is an energy or force respectively.
+    Returns:
+      See above.
+    """
+    force_fn = energy_or_force_fn
+
+    dt_2 = 0.5 * dt ** 2
+
+    def init_fun(R: Array,
+                 V: Array,
+                 mass=f32(1.0),
+                 **kwargs) -> NVEState:
+        mass = quantity.canonicalize_mass(mass)
+        return NVEState(R, V, force_fn(R, V, **kwargs), mass)
+
+    def apply_fun(state: NVEState, **kwargs) -> NVEState:
+        R, V, F, mass = dataclasses.astuple(state)
+        A = F / mass
+        dR = V * dt + A * dt_2
+        R, V = shift_fn(R, dR, V)
+        F = force_fn(R, V, **kwargs)
+        A_prime = F / mass
+        V = V + f32(0.5) * (A + A_prime) * dt
+        return NVEState(R, V, F, mass)
+        A = F/mass
+        k1 = force_fn(R, V, **kwargs)
+
+        k2 = force_fn(R+V)
+
+    return init_fun, apply_fun
+
 
 def nve2(params, change_R_V, dt: float) -> Simulator:
     """Simulates a system in the NVE ensemble.

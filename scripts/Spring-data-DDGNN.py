@@ -8,22 +8,28 @@ import os
 from datetime import datetime
 from functools import partial, wraps
 
+import fire
 import jax
 import jax.numpy as jnp
 import numpy as np
 from jax import jit, random, value_and_grad, vmap
 from jax.experimental import optimizers
 from jax_md import space
-#from shadow.plot import *
-#from sklearn.metrics import r2_score
 import matplotlib.pyplot as plt
 
-from psystems.npendulum import PEF, get_init, hconstraints
+# from shadow.plot import *
+# from sklearn.metrics import r2_score
+
+from psystems.nsprings import (chain, edge_order, get_connections,
+                               get_fully_connected_senders_and_receivers,
+                               get_fully_edge_order, get_init, get_init_spring)
 
 MAINPATH = ".."  # nopep8
 sys.path.append(MAINPATH)  # nopep8
 
-import fire
+from pyexpat import model
+from statistics import mode
+
 import jraph
 import src
 from jax.config import config
@@ -32,21 +38,36 @@ from src.graph import *
 from src.lnn import acceleration, accelerationFull, accelerationTV
 from src.md import *
 from src.models import MSE, initialize_mlp
-from src.nve import nve
+from src.nve import NVEStates, nve
 from src.utils import *
 
 config.update("jax_enable_x64", True)
 config.update("jax_debug_nans", True)
 # jax.config.update('jax_platform_name', 'gpu')
 
+#create a new state for storing data
+class Datastate:
+    def __init__(self, model_states):
+        self.position = model_states.position[:-1]
+        self.velocity = model_states.velocity[:-1]
+        self.force = model_states.force[:-1]
+        self.mass = model_states.mass[:-1]
+        self.index = 0
+        self.change_position = model_states.position[1:]-model_states.position[:-1]
+        self.change_velocity = model_states.velocity[1:]-model_states.velocity[:-1]
 
-def main(N=2, dim=2, saveat=100, nconfig=1000, ifdrag=0, runs=100):
+def main(N1=5, N2=1, dim=2, grid=False, saveat=100, runs=101, nconfig=1000, ifdrag=0):
 
-    tag = f"{N}-Pendulum-data"
+    if N2 is None:
+        N2 = N1
+
+    N = N1*N2
+
+    tag = f"{N}-Spring-data"
     seed = 42
     out_dir = f"../data-efficiency"
     rname = False
-    rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "0"
+    rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "1"
     filename_prefix = f"{out_dir}/{tag}/{rstring}/"
 
     def _filename(name):
@@ -82,30 +103,48 @@ def main(N=2, dim=2, saveat=100, nconfig=1000, ifdrag=0, runs=100):
     np.random.seed(seed)
     key = random.PRNGKey(seed)
 
-    init_confs = [get_init(N, dim=dim) for i in range(nconfig)]
+    init_confs = [chain(N)[:2]
+                  for i in range(nconfig)]
+
+    _, _, senders, receivers = chain(N)
+
+    # if grid:
+    #     senders, receivers = get_connections(N1, N2)
+    # else:
+    #     # senders, receivers = get_fully_connected_senders_and_receivers(N)
+    #     print("Creating Chain")
+
+    R, V = init_confs[0]
 
     print("Saving init configs...")
-    savefile(f"initial-configs_{ifdrag}.pkl", init_confs)
+    savefile(f"initial-configs_{ifdrag}.pkl",
+             init_confs, metadata={"N1": N1, "N2": N2})
 
     species = jnp.zeros(N, dtype=int)
     masses = jnp.ones(N)
 
-    dt = 1.0e-5
-    stride = 1000
+    dt = 1.0e-3
+    stride = 100
     lr = 0.001
 
     ################################################
     ################## SYSTEM ######################
     ################################################
 
-    pot_energy_orig = PEF
+    # parameters = [[dict(length=1.0)]]
+    # pot_energy_orig = map_parameters(lnn.SPRING, displacement, species, parameters)
+
+    def pot_energy_orig(x):
+        dr = jnp.square(x[senders, :] - x[receivers, :]).sum(axis=1)
+        return vmap(partial(lnn.SPRING, stiffness=1.0, length=1.0))(dr).sum()
+
     kin_energy = partial(lnn._T, mass=masses)
 
     def Lactual(x, v, params):
         return kin_energy(v) - pot_energy_orig(x)
 
-    def constraints(x, v, params):
-        return jax.jacobian(lambda x: hconstraints(x.reshape(-1, dim)), 0)(x)
+    # def constraints(x, v, params):
+    #     return jax.jacobian(lambda x: hconstraints(x.reshape(-1, dim)), 0)(x)
 
     def external_force(x, v, params):
         F = 0*R
@@ -126,7 +165,7 @@ def main(N=2, dim=2, saveat=100, nconfig=1000, ifdrag=0, runs=100):
     acceleration_fn_orig = lnn.accelerationFull(N, dim,
                                                 lagrangian=Lactual,
                                                 non_conservative_forces=drag,
-                                                constraints=constraints,
+                                                constraints=None,
                                                 external_force=None)
 
     def force_fn_orig(R, V, params, mass=None):
@@ -154,7 +193,7 @@ def main(N=2, dim=2, saveat=100, nconfig=1000, ifdrag=0, runs=100):
         ind += 1
         print(f"{ind}/{len(init_confs)}", end='\r')
         model_states = forward_sim(R, V)
-        dataset_states += [model_states]
+        dataset_states += [Datastate(model_states)]
         if ind % saveat == 0:
             print(f"{ind} / {len(init_confs)}")
             print("Saving datafile...")
@@ -182,12 +221,16 @@ def main(N=2, dim=2, saveat=100, nconfig=1000, ifdrag=0, runs=100):
         plt.ylabel("Energy")
         plt.xlabel("Time step")
 
-        title = f"{N}-Pendulum random state {ind} {ifdrag}"
+        title = f"{N}-Spring random state {ind}"
         plt.title(title)
         plt.savefig(
             _filename(title.replace(" ", "_")+".png"), dpi=300)
+        save_ovito(f"dataset_{ind}.data", [
+            state for state in NVEStates(states)], lattice="")
+
         if ind >= 10:
             break
 
-
 fire.Fire(main)
+
+

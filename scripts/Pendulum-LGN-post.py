@@ -4,7 +4,6 @@
 
 import json
 import sys
-import os
 from datetime import datetime
 from functools import partial, wraps
 from statistics import mode
@@ -17,13 +16,11 @@ from jax import jit, random, value_and_grad, vmap
 from jax.experimental import optimizers
 from jax_md import space
 from pyexpat import model
-# from shadow.plot import *
+from shadow.plot import *
 # from sklearn.metrics import r2_score
-import matplotlib.pyplot as plt
 
 from psystems.npendulum import (PEF, edge_order, get_init, hconstraints,
                                 pendulum_connections)
-
 
 MAINPATH = ".."  # nopep8
 sys.path.append(MAINPATH)  # nopep8
@@ -31,11 +28,10 @@ sys.path.append(MAINPATH)  # nopep8
 import jraph
 import src
 from jax.config import config
-from src import lnn
+from src import fgn, lnn
 from src.graph import *
 from src.lnn import acceleration, accelerationFull, accelerationTV
 from src.md import *
-from src.md import predition2
 from src.models import MSE, initialize_mlp
 from src.nve import NVEStates, nve
 from src.utils import *
@@ -54,14 +50,14 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0,  saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0):
+def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0, withdata=None, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0):
 
     print("Configs: ")
     pprint(dt, stride, ifdrag,
            namespace=locals())
 
     PSYS = f"{N}-Pendulum"
-    TAG = f"Neural-ODE"
+    TAG = f"lgn"
     out_dir = f"../results"
 
     def _filename(name, tag=TAG, trained=None):
@@ -75,7 +71,8 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
             psys = PSYS
         name = ".".join(name.split(".")[:-1]) + \
             part + name.split(".")[-1]
-        rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "0"
+        rstring = randfilename if (rname and (tag != "data")) else (
+            "0" if (tag == "data") or (withdata == None) else f"{withdata}")
         filename_prefix = f"{out_dir}/{psys}-{tag}/{rstring}/"
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
@@ -209,63 +206,51 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
     #     g, V, T = cal_graph(params, graph, eorder=eorder, useT=True)
     #     return T - V
 
-    if trainm:
-        print("kinetic energy: learnable")
+    # if trainm:
+    #     print("kinetic energy: learnable")
 
-        def L_energy_fn(params, graph):
-            g, V, T = cal_graph(params, graph, eorder=eorder,
-                                useT=True)
-            return T - V
+    #     def L_energy_fn(params, graph):
+    #         g, V, T = cal_graph(params, graph, eorder=eorder,
+    #                             useT=True)
+    #         return T - V
 
-    else:
-        print("kinetic energy: 0.5mv^2")
+    # else:
+    #     print("kinetic energy: 0.5mv^2")
 
-        kin_energy = partial(lnn._T, mass=masses)
+    #     kin_energy = partial(lnn._T, mass=masses)
 
-        def L_energy_fn(params, graph):
-            g, V, T = cal_graph(params, graph, eorder=eorder,
-                                useT=True)
-            return kin_energy(graph.nodes["velocity"]) - V
+    #     def L_energy_fn(params, graph):
+    #         g, V, T = cal_graph(params, graph, eorder=eorder,
+    #                             useT=True)
+    #         return kin_energy(graph.nodes["velocity"]) - V
+
+    def dist(*args):
+        disp = displacement(*args)
+        return jnp.sqrt(jnp.square(disp).sum())
+
+    R = jnp.array(R)
+    V = jnp.array(V)
+    species = jnp.array(species).reshape(-1, 1)
+
+    dij = vmap(dist, in_axes=(0, 0))(R[senders], R[receivers])
 
     state_graph = jraph.GraphsTuple(nodes={
         "position": R,
         "velocity": V,
         "type": species,
     },
-        edges={},
+        edges={"dij": dij},
         senders=senders,
         receivers=receivers,
         n_node=jnp.array([N]),
         n_edge=jnp.array([senders.shape[0]]),
         globals={})
 
-    # def energy_fn(species):
-    #     senders, receivers = [np.array(i)
-    #                           for i in pendulum_connections(R.shape[0])]
-    #     state_graph = jraph.GraphsTuple(nodes={
-    #         "position": R,
-    #         "velocity": V,
-    #         "type": species
-    #     },
-    #         edges={},
-    #         senders=senders,
-    #         receivers=receivers,
-    #         n_node=jnp.array([R.shape[0]]),
-    #         n_edge=jnp.array([senders.shape[0]]),
-    #         globals={})
+    def acceleration_fn(params, graph):
+        acc = fgn.cal_lgn(params, graph, mpass=1)
+        return acc
 
-    #     def apply(R, V, params):
-    #         state_graph.nodes.update(position=R)
-    #         state_graph.nodes.update(velocity=V)
-    #         return L_energy_fn(params, state_graph)
-    #     return apply
-
-    def L_change_fn(params, graph):
-        g, change = cal_graph_modified(params, graph, eorder=eorder,
-                                useT=True)
-        return change
-
-    def change_fn(species):
+    def acc_fn(species):
         senders, receivers = [np.array(i)
                               for i in pendulum_connections(R.shape[0])]
         state_graph = jraph.GraphsTuple(nodes={
@@ -273,7 +258,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
             "velocity": V,
             "type": species
         },
-            edges={},
+            edges={"dij": dij},
             senders=senders,
             receivers=receivers,
             n_node=jnp.array([R.shape[0]]),
@@ -283,33 +268,16 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
         def apply(R, V, params):
             state_graph.nodes.update(position=R)
             state_graph.nodes.update(velocity=V)
-            return L_change_fn(params, state_graph)
+            state_graph.edges.update(dij=vmap(dist, in_axes=(0, 0))(R[senders], R[receivers])
+                                     )
+            return acceleration_fn(params, state_graph)
         return apply
 
-    # apply_fn = energy_fn(species)
-    apply_fn = change_fn(species)
+    apply_fn = acc_fn(species)
     v_apply_fn = vmap(apply_fn, in_axes=(None, 0))
 
     def Lmodel(x, v, params): return apply_fn(x, v, params["L"])
-    
-    # def change_R_V(N, dim):
 
-    #     def fn(Rs, Vs, params):
-    #         return Lmodel(Rs, Vs, params)
-    #     return fn
-    
-    # change_R_V_ = change_R_V(N, dim)
-
-    def change_Acc(N, dim):
-        def fn(Rs, Vs, params):
-            return Lmodel(Rs, Vs, params)
-        return fn
-    
-    change_Acc = change_Acc(N, dim)
-
-    # v_change_R_V_ = vmap(change_R_V_, in_axes=(0, 0, None))
-
-    
 
     def nndrag(v, params):
         return - jnp.abs(models.forward_pass(params, v.reshape(-1), activation_fn=models.SquarePlus)) * v
@@ -325,10 +293,31 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
         def drag(x, v, params):
             return vmap(nndrag, in_axes=(0, None))(v.reshape(-1), params["drag"]).reshape(-1, 1)
 
+    
+
     acceleration_fn_model = accelerationFull(N, dim,
                                              lagrangian=Lmodel,
                                              constraints=constraints,
                                              non_conservative_forces=drag)
+
+    # def nndrag(v, params):
+    #     return - jnp.abs(models.forward_pass(params, v.reshape(-1), activation_fn=models.SquarePlus)) * v
+
+    # if ifdrag == 0:
+    #     print("Drag: 0.0")
+
+    #     def drag(x, v, params):
+    #         return 0.0
+    # elif ifdrag == 1:
+    #     print("Drag: -0.1*v")
+
+    #     def drag(x, v, params):
+    #         return vmap(nndrag, in_axes=(0, None))(v.reshape(-1), params["drag"]).reshape(-1, 1)
+
+    # acceleration_fn_model = accelerationFull(N, dim,
+    #                                          lagrangian=Lmodel,
+    #                                          constraints=constraints,
+    #                                          non_conservative_forces=drag)
 
     def force_fn_model(R, V, params, mass=None):
         if mass is None:
@@ -338,21 +327,8 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
 
     params = loadfile(f"trained_model.dil", trained=useN)[0]
 
-    # sim_model = get_forward_sim(
-    #     params=params, force_fn=force_fn_model, runs=runs)
-
-    # def delta_R_V_given_R_V(params):
-    #     def fn(R, V):
-    #         return v_change_R_V_(R, V, params)
-    #     return fn
-
-    def get_forward_sim_neural_ode(params = None, run = runs):
-        @jit
-        def fn(R, V):
-            return predition3(R,  V, params, change_Acc, dt, masses, stride=stride, runs=run)
-        return fn
-
-    sim_model = get_forward_sim_neural_ode(params=params, run=runs)
+    sim_model = get_forward_sim(
+        params=params, force_fn=force_fn_model, runs=runs)
 
     ################################################
     ############## forward simulation ##############
@@ -427,41 +403,42 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
         pred_traj = sim_model(R, V)
 
         if saveovito:
-            save_ovito(f"pred_{ind}.data", [
+            save_ovito(f"pred_{ind}.ovito", [
                 state for state in NVEStates(pred_traj)], lattice="")
-            save_ovito(f"actual_{ind}.data", [
+            save_ovito(f"actual_{ind}.ovito", [
                 state for state in NVEStates(actual_traj)], lattice="")
 
         trajectories += [(actual_traj, pred_traj)]
         savefile("trajectories.pkl", trajectories)
 
         if plotthings:
+            raise Warning("Cannot calculate energy in FGN")
             for key, traj in {"actual": actual_traj, "pred": pred_traj}.items():
 
                 print(f"plotting energy ({key})...")
 
                 Es = Es_fn(traj)
-                Es_pred = Es_fn(traj)
+                Es_pred = Es_pred_fn(traj)
 
-                # Es_pred = Es_pred - Es_pred[0] + Es[0]
+                Es_pred = Es_pred - Es_pred[0] + Es[0]
 
-                fig, axs = plt.subplots(1, 2, figsize=(20, 5))
+                fig, axs = panel(1, 2, figsize=(20, 5))
                 axs[0].plot(Es, label=["PE", "KE", "L", "TE"], lw=6, alpha=0.5)
                 axs[1].plot(Es_pred, "--", label=["PE", "KE", "L", "TE"])
                 plt.legend(bbox_to_anchor=(1, 1), loc=2)
                 axs[0].set_facecolor("w")
 
-                plt.xlabel("Time step")
-                plt.ylabel("Energy")
+                xlabel("Time step", ax=axs)
+                ylabel("Energy", ax=axs)
 
-                title = f"(Neural ODE) {N}-Pendulum Exp {ind}"
+                title = f"(FGN) {N}-Pendulum Exp {ind}"
                 plt.title(title)
                 plt.savefig(_filename(title.replace(" ", "-")+f"_{key}.png"))
 
                 net_force_orig = net_force_orig_fn(traj)
                 net_force_model = net_force_model_fn(traj)
 
-                fig, axs = plt.subplots(1+R.shape[0], 1, figsize=(20,
+                fig, axs = panel(1+R.shape[0], 1, figsize=(20,
                                                            R.shape[0]*5), hshift=0.1, vs=0.35)
                 for i, ax in zip(range(R.shape[0]+1), axs):
                     if i == 0:
@@ -499,18 +476,20 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
         nexp["Zerr"] += [RelErr(actual_traj.position,
                                 pred_traj.position)]
 
-        fig, axs = plt.subplots(1, 2, figsize=(20, 5))
+        fig, axs = panel(1, 2, figsize=(20, 5))
         axs[0].plot(Es, label=["PE", "KE", "L", "TE"], lw=6, alpha=0.5)
         axs[1].plot(Eshat, "--", label=["PE", "KE", "L", "TE"])
         plt.legend(bbox_to_anchor=(1, 1), loc=2)
         axs[0].set_facecolor("w")
 
-        plt.xlabel("Time step")
-        plt.ylabel("Energy")
+        xlabel("Time step", ax=axs[0])
+        xlabel("Time step", ax=axs[1])
+        ylabel("Energy", ax=axs[0])
+        ylabel("Energy", ax=axs[1])
 
-        title = f"Neural ODE {N}-Pendulum Exp {ind} Lmodel"
+        title = f"LGN {N}-Pendulum Exp {ind} Lmodel"
         axs[1].set_title(title)
-        title = f"Neural ODE {N}-Pendulum Exp {ind} Lactual"
+        title = f"LGN {N}-Pendulum Exp {ind} Lactual"
         axs[0].set_title(title)
 
         plt.savefig(_filename(title.replace(" ", "-")+f".png"))
@@ -519,7 +498,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
 
     def make_plots(nexp, key, yl="Err", xl="Time", key2=None):
         print(f"Plotting err for {key}")
-        fig, axs = plt.subplots(1, 1)
+        fig, axs = panel(1, 1)
         filepart = f"{key}"
         for i in range(len(nexp[key])):
             y = nexp[key][i].flatten()
@@ -538,7 +517,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
 
         plt.savefig(_filename(f"RelError_{filepart}.png"))
 
-        fig, axs = plt.subplots(1, 1)
+        fig, axs = panel(1, 1)
         mean_ = jnp.log(jnp.array(nexp[key])).mean(axis=0)
         std_ = jnp.log(jnp.array(nexp[key])).std(axis=0)
 
@@ -564,10 +543,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
     gmean_zerr = jnp.exp( jnp.log(jnp.array(nexp["Zerr"])).mean(axis=0) )
     gmean_herr = jnp.exp( jnp.log(jnp.array(nexp["Herr"])).mean(axis=0) )
 
-    np.savetxt("../zerr/gnode1.txt", gmean_zerr, delimiter = "\n")
-    np.savetxt("../herr/gnode1.txt", gmean_herr, delimiter = "\n")
+    np.savetxt("../zerr/lgn.txt", gmean_zerr, delimiter = "\n")
+    np.savetxt("../herr/lgn.txt", gmean_herr, delimiter = "\n")
 
 fire.Fire(main)
-
-
-

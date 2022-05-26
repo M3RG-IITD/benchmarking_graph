@@ -7,22 +7,22 @@ import fire
 import os
 from datetime import datetime
 from functools import partial, wraps
-from psystems.npendulum import get_init,PEF
+from psystems.npendulum import get_init
 
 import jax
 import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 from jax.experimental import ode
-from shadow.plot import panel
-
+# from shadow.plot import panel
+import matplotlib.pyplot as plt
 
 MAINPATH = ".."  # nopep8
 sys.path.append(MAINPATH)  # nopep8
 
 import src
 from jax.config import config
-from src import hamiltonian
+from src import lnn
 from src.graph import *
 from src.md import *
 from src.models import MSE, initialize_mlp
@@ -49,10 +49,11 @@ def ps(*args):
 # runs = 1000
 
 
-def main(N=2, dim=2, nconfig=1000, saveat=100, ifdrag=0,dt = 1e-5, stride = 1000, runs=1000, plottraj=False):
+def main(N=2, dim=2, nconfig=1000, saveat=10, ifdrag=0, dt=0.01, runs=100):
+
     tag = f"{N}-Pendulum-data"
     seed = 42
-    out_dir = f"../results"
+    out_dir = f"../data-efficiency"
     rname = False
     rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "2"
     filename_prefix = f"{out_dir}/{tag}/{rstring}/"
@@ -81,30 +82,22 @@ def main(N=2, dim=2, nconfig=1000, saveat=100, ifdrag=0,dt = 1e-5, stride = 1000
 
     print("Saving init configs...")
     savefile = OUT(src.io.savefile)
-    savefile(f"initial-configs{ifdrag}.pkl", init_confs)
-    
-    species = jnp.zeros(N, dtype=int)
-    masses = jnp.ones(N)
+    savefile(f"initial-configs_{ifdrag}.pkl", init_confs)
 
     ################################################
     ################## SYSTEM ######################
     ################################################
-    
-    # def KE(p):
-    #     return (p*p).sum()/2
 
-    # def V(x, params):
-    #     return 10*x[:, 1].sum()
-    
-    # def hamiltonian(x, p, params): return KE(p) + V(x, params)
-    
-    # def drag(x, p, params):
-    #     return -0.1 * (p*p).sum()
-    
-    pot_energy_orig = PEF
-    kin_energy = partial(arc.hamiltonian._T, mass=masses)
-    
-    def Hactual(x, p, params): return kin_energy(p) + pot_energy_orig(x)
+    def drag(x, p, params):
+        return -0.1 * (p*p).sum()
+
+    def KE(p):
+        return (p*p).sum()/2
+
+    def V(x, params):
+        return 10*x[:, 1].sum()
+
+    def hamiltonian(x, p, params): return KE(p) + V(x, params)
 
     def phi(x):
         X = jnp.vstack([x[:1, :]*0, x])
@@ -112,23 +105,8 @@ def main(N=2, dim=2, nconfig=1000, saveat=100, ifdrag=0,dt = 1e-5, stride = 1000
 
     constraints = get_constraints(N, dim, phi)
 
-    if ifdrag == 0:
-        print("Drag: 0.0")
-        def drag(x, p, params):
-            return 0.0
-    elif ifdrag == 1:
-        print("Drag: -0.1*p")        
-        def drag(x, p, params):
-            # return -0.1 * (p*p).sum()
-            return (-0.1*p).reshape(-1,1)
-            
-    def external_force(x, p, params):
-        F = 0*p
-        F = jax.ops.index_update(F, (1, 1), -1.0)
-        return F.reshape(-1, 1)
-        
     zdot, lamda_force = get_zdot_lambda(
-        N, dim, Hactual, drag=None, constraints=constraints,external_force=None)
+        N, dim, hamiltonian, drag=None, constraints=constraints)
 
     def zdot_func(z, t):
         x, p = jnp.split(z, 2)
@@ -147,15 +125,14 @@ def main(N=2, dim=2, nconfig=1000, saveat=100, ifdrag=0,dt = 1e-5, stride = 1000
             return x, p
         else:
             return jnp.split(out, 2, axis=1)[ind]
-    
-    t = jnp.linspace(0.0, runs*stride*dt, runs*stride)
+
+    t = jnp.linspace(0.0, runs*dt, runs)
 
     print("Data generation ...")
     ind = 0
     dataset_states = []
     for x, p in init_confs:
-        _z_out = ode.odeint(zdot_func, get_z(x, p), t)
-        z_out = _z_out[0::stride]
+        z_out = ode.odeint(zdot_func, get_z(x, p), t)
         xout, pout = zz(z_out)
         zdot_out = jax.vmap(zdot, in_axes=(0, 0, None))(xout, pout, None)
         ind += 1
@@ -176,40 +153,38 @@ def main(N=2, dim=2, nconfig=1000, saveat=100, ifdrag=0,dt = 1e-5, stride = 1000
     print("Saving datafile...")
     savefile(f"model_states_{ifdrag}.pkl", dataset_states)
 
-    if plottraj:
-        print("plotting traj and Forces...")
-        ind = 0
-        for states in dataset_states:
-            z_out, _ = states
-            xout, pout = zz(z_out)
-            # xout = states.position
-            # pout = states.velocity
-            ind += 1
-            fig, axs = panel(1, 2, figsize=(10, 5))
+    print("plotting traj and Forces...")
 
-            for i in range(N):
-                axs[0].scatter(xout[:, i, 0], xout[:, i, 1], c=t[0::stride],
-                               s=10*(i+1), label=f"pend: {i+1}")
-            axs[0].set_xlabel("X-position")
-            axs[0].set_ylabel("Y-position")
-            axs[0].axis("square")
+    ind = 0
+    for states in dataset_states:
+        z_out, _ = states
+        xout, pout = zz(z_out)
+        # xout = states.position
+        # pout = states.velocity
+        ind += 1
+        fig, axs = plt.subplots(1, 2, figsize=(10, 5))
 
-            force = jax.vmap(lamda_force, in_axes=(
-                0, 0, None))(xout, pout, None)
-            for i in range(N):
-                axs[1].scatter(force[:, N+i, 0], force[:, N+i, 1], c=t[0::stride],
-                               s=10*(i+1), label=f"pend: {i+1}")
-            axs[1].set_xlabel(r"F$_x$ (constraints)")
-            axs[1].set_ylabel(r"F$_y$ (constraints)")
-            axs[1].axis("square")
+        for i in range(N):
+            axs[0].scatter(xout[:, i, 0], xout[:, i, 1], c=t,
+                           s=10*(i+1), label=f"pend: {i+1}")
+        axs[0].set_xlabel("X-position")
+        axs[0].set_ylabel("Y-position")
+        axs[0].axis("square")
 
-            title = f"{N}-Pendulum random state {ind} {ifdrag}"
-            plt.suptitle(title, va="bottom")
-            plt.savefig(_filename(title.replace(" ", "_")+".png"), dpi=300)
-            if ind > 3:
-                break
-    else:
-        pass
+        force = jax.vmap(lamda_force, in_axes=(0, 0, None))(xout, pout, None)
+        for i in range(N):
+            axs[1].scatter(force[:, N+i, 0], force[:, N+i, 1], c=t,
+                           s=10*(i+1), label=f"pend: {i+1}")
+        axs[1].set_xlabel(r"F$_x$ (constraints)")
+        axs[1].set_ylabel(r"F$_y$ (constraints)")
+        axs[1].axis("square")
+
+        title = f"{N}-Pendulum random state {ind} {ifdrag}"
+        plt.suptitle(title, va="bottom")
+        plt.savefig(_filename(title.replace(" ", "_")+".png"), dpi=300)
+
+        if ind >= 10:
+            break
 
 
 fire.Fire(main)

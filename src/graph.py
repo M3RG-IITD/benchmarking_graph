@@ -837,6 +837,178 @@ def cal_graph_modified(params, graph, eorder=None, mpass=1,
 
     return Net(graph)
 
+def cal_graph_modified_input(params, graph, eorder=None, mpass=1,
+              useT=True, useonlyedge=False, act_fn=SquarePlus, timestep=0.01):
+    fb_params = params["fb"]
+    fne_params = params["fne"]
+    fneke_params = params["fneke"]
+    fv_params = params["fv"]
+    fe_params = params["fe"]
+    ff1_params = params["ff1"]
+    ff2_params = params["ff2"]
+    ff3_params = params["ff3"]
+    ke_params = params["ke"]
+
+    num_species = 1
+
+    def onehot(n):
+        def fn(n):
+            out = jax.nn.one_hot(n, num_species)
+            return out
+        out = vmap(fn)(n.reshape(-1,))
+        return out
+
+    def fne(n):
+        def fn(ni):
+            out = forward_pass(fne_params, ni, activation_fn=lambda x: x)
+            return out
+        out = vmap(fn, in_axes=(0))(n)
+        return out
+
+    def fneke(n):
+        def fn(ni):
+            out = forward_pass(fneke_params, ni, activation_fn=lambda x: x)
+            return out
+        out = vmap(fn, in_axes=(0))(n)
+        return out
+
+    def fb(e):
+        def fn(eij):
+            out = forward_pass(fb_params, eij, activation_fn=act_fn)
+            return out
+        out = vmap(fn, in_axes=(0))(e)
+        return out
+
+    def fv(n, e, s, r, sum_n_node):
+        c1ij = jnp.hstack([n[r], e])
+        out = vmap(lambda x: forward_pass(fv_params, x))(c1ij)
+        return n + jax.ops.segment_sum(out, r, sum_n_node)
+
+    def fe(e, s, r):
+        def fn(hi, hj):
+            c2ij = hi * hj
+            out = forward_pass(fe_params, c2ij, activation_fn=act_fn)
+            return out
+        out = e + vmap(fn, in_axes=(0, 0))(s, r)
+        return out
+
+    def ff1(e):
+        def fn(eij):
+            out = forward_pass(ff1_params, eij, activation_fn=act_fn)
+            return out
+        out = vmap(fn)(e)
+        return out
+
+    def ff2(n):
+        def fn(ni):
+            out = forward_pass(ff2_params, ni, activation_fn=act_fn)
+            return out
+        out = vmap(fn)(n)
+        return out
+
+    def ff3(n):
+        def fn(ni):
+            out = forward_pass(ff3_params, ni, activation_fn=act_fn)
+            return out
+        out = vmap(fn)(n)
+        return out
+
+    def ke(n):
+        def fn(ni):
+            out = forward_pass(ke_params, ni, activation_fn=act_fn)
+            return out
+        out = vmap(fn)(n)
+        return out
+
+    # ================================================================================
+
+    def initial_edge_emb_fn(edges, senders, receivers, globals_):
+        del edges, globals_
+        dr = (senders["position"] - receivers["position"])
+        # eij = dr
+        eij = jnp.sqrt(jnp.square(dr).sum(axis=1, keepdims=True))
+        emb = fb(eij)
+        return frozendict({"edge_embed": emb, "eij": eij})
+
+    def initial_node_emb_fn(nodes, sent_edges, received_edges, globals_):
+        del sent_edges, received_edges, globals_
+        type_of_node = nodes["type"]
+        ohe = onehot(type_of_node)
+        emb = fne(ohe)
+        #emb_pos = jnp.hstack([emb, nodes["position"]])
+        #emb_vel = jnp.hstack(
+        #    [fneke(ohe), jnp.sum(jnp.square(nodes["velocity"]), axis=1, keepdims=True)])
+        #emb_v = jnp.hstack([emb, nodes["position"], nodes["velocity"]])
+        emb_v = jnp.hstack(
+            [emb, nodes["position"], jnp.sum(jnp.square(nodes["velocity"]), axis=1, keepdims=True)])
+        return frozendict({"node_embed": emb_v,
+                           #"node_pos_embed": emb_pos,
+                           #"node_vel_embed": emb_vel,
+                           })
+
+        
+        # type_of_node = nodes["type"]
+        # ohe = onehot(type_of_node)
+        # emb = fne(ohe)
+        # emb_pos = jnp.hstack([emb, nodes["position"]])
+        # emb_vel = jnp.hstack(
+        #     [fneke(ohe), jnp.sum(jnp.square(nodes["velocity"]), axis=1, keepdims=True)])
+        # return frozendict({"node_embed": emb,
+        #                    "node_pos_embed": emb_pos,
+        #                    "node_vel_embed": emb_vel,
+        #                    })
+
+    def update_node_fn(nodes, edges, senders, receivers, globals_, sum_n_node):
+        del globals_
+        emb = fv(nodes["node_embed"], edges["edge_embed"],
+                 senders, receivers, sum_n_node)
+        n = dict(nodes)
+        n.update({"node_embed": emb})
+        return frozendict(n)
+
+    def update_edge_fn(edges, senders, receivers, globals_, last_step):
+        del globals_
+        emb = fe(edges["edge_embed"], senders["node_embed"],
+                 receivers["node_embed"])
+        if last_step:
+            if eorder is not None:
+                emb = (emb + fe(edges["edge_embed"][eorder],
+                       receivers["node_embed"], senders["node_embed"])) / 2
+        return frozendict({"edge_embed": emb, "eij": edges["eij"]})
+
+        
+
+    # if useonlyedge:
+    #     def edge_node_to_V_fn(edges, nodes):
+    #         vij = ff1(edges["edge_embed"])
+    #         # print(vij, edges["eij"])
+    #         return vij.sum()
+    # else:
+    #     def edge_node_to_V_fn(edges, nodes):
+    #         vij = ff1(edges["edge_embed"]).sum()
+    #         vi = 0
+    #         vi = vi + ff2(nodes["node_embed"]).sum()
+    #         vi = vi + ff3(nodes["node_pos_embed"]).sum()
+    #         return vij + vi
+
+    def node_to_T_fn(nodes):
+        #return ke(nodes["node_vel_embed"]).sum()
+#        print(nodes["node_embed"].shape[0])
+        #timecolumn = jnp.full((nodes["node_embed"].shape[0],1),timestep)
+        return ke(nodes["node_embed"])
+
+    # if not(useT):
+    #     node_to_T_fn = None
+
+    Net = GNNet_modified(N=mpass,
+                T_fn = node_to_T_fn,
+                initial_edge_embed_fn=initial_edge_emb_fn,
+                initial_node_embed_fn=initial_node_emb_fn,
+                update_edge_fn=update_edge_fn,
+                update_node_fn=update_node_fn)
+
+    return Net(graph)
+
 
 
 

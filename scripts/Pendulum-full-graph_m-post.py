@@ -61,7 +61,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
            namespace=locals())
 
     PSYS = f"{N}-Pendulum"
-    TAG = f"Neural-ODE"
+    TAG = f"full-graph-m"
     out_dir = f"../results"
 
     def _filename(name, tag=TAG, trained=None):
@@ -261,7 +261,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
     #     return apply
 
     def L_change_fn(params, graph):
-        g, change = cal_graph_modified(params, graph, eorder=eorder,
+        g, change = cal_graph_modified_input(params, graph, eorder=eorder,
                                 useT=True)
         return change
 
@@ -292,22 +292,15 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
 
     def Lmodel(x, v, params): return apply_fn(x, v, params["L"])
     
-    # def change_R_V(N, dim):
+    def change_R_V(N, dim):
 
-    #     def fn(Rs, Vs, params):
-    #         return Lmodel(Rs, Vs, params)
-    #     return fn
-    
-    # change_R_V_ = change_R_V(N, dim)
-
-    def change_Acc(N, dim):
         def fn(Rs, Vs, params):
             return Lmodel(Rs, Vs, params)
         return fn
     
-    change_Acc = change_Acc(N, dim)
+    change_R_V_ = change_R_V(N, dim)
 
-    # v_change_R_V_ = vmap(change_R_V_, in_axes=(0, 0, None))
+    v_change_R_V_ = vmap(change_R_V_, in_axes=(0, 0, None))
 
     
 
@@ -346,13 +339,13 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
     #         return v_change_R_V_(R, V, params)
     #     return fn
 
-    def get_forward_sim_neural_ode(params = None, run = runs):
+    def get_forward_sim_full_graph_network(params = None, run = runs):
         @jit
         def fn(R, V):
-            return predition3(R,  V, params, change_Acc, dt, masses, stride=stride, runs=run)
+            return predition2(R,  V, params, change_R_V_, dt, masses, stride=stride, runs=run)
         return fn
 
-    sim_model = get_forward_sim_neural_ode(params=params, run=runs)
+    sim_model = get_forward_sim_full_graph_network(params=params, run=runs)
 
     ################################################
     ############## forward simulation ##############
@@ -454,15 +447,14 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
                 plt.xlabel("Time step")
                 plt.ylabel("Energy")
 
-                title = f"(Neural ODE) {N}-Pendulum Exp {ind}"
+                title = f"(Full Graph) {N}-Pendulum Exp {ind}"
                 plt.title(title)
                 plt.savefig(_filename(title.replace(" ", "-")+f"_{key}.png"))
 
                 net_force_orig = net_force_orig_fn(traj)
                 net_force_model = net_force_model_fn(traj)
 
-                fig, axs = plt.subplots(1+R.shape[0], 1, figsize=(20,
-                                                           R.shape[0]*5), hshift=0.1, vs=0.35)
+                fig, axs = plt.subplots(1+R.shape[0], 1, figsize=(20, R.shape[0]*5), hshift=0.1, vs=0.35)
                 for i, ax in zip(range(R.shape[0]+1), axs):
                     if i == 0:
                         ax.text(0.6, 0.8, "Averaged over all particles",
@@ -508,9 +500,9 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
         plt.xlabel("Time step")
         plt.ylabel("Energy")
 
-        title = f"Neural ODE {N}-Pendulum Exp {ind} Lmodel"
+        title = f"Full Graph {N}-Pendulum Exp {ind} Lmodel"
         axs[1].set_title(title)
-        title = f"Neural ODE {N}-Pendulum Exp {ind} Lactual"
+        title = f"Full Graph {N}-Pendulum Exp {ind} Lactual"
         axs[0].set_title(title)
 
         plt.savefig(_filename(title.replace(" ", "-")+f".png"))
@@ -564,10 +556,8 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
     gmean_zerr = jnp.exp( jnp.log(jnp.array(nexp["Zerr"])).mean(axis=0) )
     gmean_herr = jnp.exp( jnp.log(jnp.array(nexp["Herr"])).mean(axis=0) )
 
-    np.savetxt("../zerr/gnode1.txt", gmean_zerr, delimiter = "\n")
-    np.savetxt("../herr/gnode1.txt", gmean_herr, delimiter = "\n")
+    np.savetxt("../zerr/ddgnnm.txt", gmean_zerr, delimiter = "\n")
+    np.savetxt("../herr/ddgnnm.txt", gmean_herr, delimiter = "\n")
+
 
 fire.Fire(main)
-
-
-

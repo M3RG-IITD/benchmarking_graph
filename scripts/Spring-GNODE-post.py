@@ -4,7 +4,6 @@
 
 import json
 import sys
-import os
 from datetime import datetime
 from functools import partial, wraps
 from statistics import mode
@@ -30,7 +29,7 @@ sys.path.append(MAINPATH)  # nopep8
 import jraph
 import src
 from jax.config import config
-from src import lnn
+from src import fgn, lnn
 from src.graph import *
 from src.lnn import acceleration, accelerationFull, accelerationTV
 from src.md import *
@@ -41,7 +40,7 @@ from src.utils import *
 config.update("jax_enable_x64", True)
 config.update("jax_debug_nans", True)
 # jax.config.update('jax_platform_name', 'gpu')
-plt.rcParams["font.family"] = "Arial"
+
 
 def namestr(obj, namespace):
     return [name for name in namespace if namespace[name] is obj]
@@ -62,7 +61,7 @@ def main(N=3, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
            namespace=locals())
 
     PSYS = f"{N}-Spring"
-    TAG = f"lgnn"
+    TAG = f"gnode"
     out_dir = f"../results"
 
     randfilename = datetime.now().strftime(
@@ -80,7 +79,7 @@ def main(N=3, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
         name = ".".join(name.split(".")[:-1]) + \
             part + name.split(".")[-1]
         rstring = randfilename if (rname and (tag != "data")) else (
-            "0" if (tag == "data") or (withdata == None) else f"0_{withdata}")
+            "0" if (tag == "data") or (withdata == None) else f"{withdata}")
         filename_prefix = f"{out_dir}/{psys}-{tag}/{rstring}/"
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
@@ -132,6 +131,9 @@ def main(N=3, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
         print("Creating Chain")
         _, _, senders, receivers = chain(N)
         eorder = edge_order(len(senders))
+
+    senders = jnp.array(senders)
+    receivers = jnp.array(receivers)
 
     R = model_states.position[0]
     V = model_states.velocity[0]
@@ -226,45 +228,57 @@ def main(N=3, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
     #     g, V, T = cal_graph(params, graph, eorder=eorder, useT=True)
     #     return T - V
 
-    if trainm:
-        print("kinetic energy: learnable")
+    # if trainm:
+    #     print("kinetic energy: learnable")
 
-        def L_energy_fn(params, graph):
-            g, V, T = cal_graph(params, graph, mpass=mpass, eorder=eorder,
-                                useT=True, useonlyedge=True)
-            return T - V
+    #     def L_energy_fn(params, graph):
+    #         g, V, T = cal_graph(params, graph, mpass=mpass, eorder=eorder,
+    #                             useT=True, useonlyedge=True)
+    #         return T - V
 
-    else:
-        print("kinetic energy: 0.5mv^2")
+    # else:
+    #     print("kinetic energy: 0.5mv^2")
 
-        kin_energy = partial(lnn._T, mass=masses)
+    #     kin_energy = partial(lnn._T, mass=masses)
 
-        def L_energy_fn(params, graph):
-            g, V, T = cal_graph(params, graph, mpass=mpass, eorder=eorder,
-                                useT=True, useonlyedge=True)
-            return kin_energy(graph.nodes["velocity"]) - V
+    #     def L_energy_fn(params, graph):
+    #         g, V, T = cal_graph(params, graph, mpass=mpass, eorder=eorder,
+    #                             useT=True, useonlyedge=True)
+    #         return kin_energy(graph.nodes["velocity"]) - V
+
+    def dist(*args):
+        disp = displacement(*args)
+        return jnp.sqrt(jnp.square(disp).sum())
+
+    R = jnp.array(R)
+    V = jnp.array(V)
+    species = jnp.array(species).reshape(-1, 1)
+
+    dij = vmap(dist, in_axes=(0, 0))(R[senders], R[receivers])
 
     state_graph = jraph.GraphsTuple(nodes={
         "position": R,
         "velocity": V,
         "type": species,
     },
-        edges={},
+        edges={"dij": dij},
         senders=senders,
         receivers=receivers,
         n_node=jnp.array([N]),
         n_edge=jnp.array([senders.shape[0]]),
         globals={})
 
-    def energy_fn(species):
-        # senders, receivers = [np.array(i)
-        #                       for i in get_fully_connected_senders_and_receivers(N)]
+    def acceleration_fn(params, graph):
+        acc = fgn.cal_acceleration(params, graph, mpass=1)
+        return acc
+
+    def acc_fn(species):
         state_graph = jraph.GraphsTuple(nodes={
             "position": R,
             "velocity": V,
             "type": species
         },
-            edges={},
+            edges={"dij": dij},
             senders=senders,
             receivers=receivers,
             n_node=jnp.array([R.shape[0]]),
@@ -274,32 +288,34 @@ def main(N=3, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
         def apply(R, V, params):
             state_graph.nodes.update(position=R)
             state_graph.nodes.update(velocity=V)
-            return L_energy_fn(params, state_graph)
+            state_graph.edges.update(dij=vmap(dist, in_axes=(0, 0))(R[senders], R[receivers])
+                                     )
+            return acceleration_fn(params, state_graph)
         return apply
 
-    apply_fn = energy_fn(species)
+    apply_fn = acc_fn(species)
     v_apply_fn = vmap(apply_fn, in_axes=(None, 0))
 
-    def Lmodel(x, v, params): return apply_fn(x, v, params["L"])
+    def acceleration_fn_model(x, v, params): return apply_fn(x, v, params["L"])
 
-    def nndrag(v, params):
-        return - jnp.abs(models.forward_pass(params, v.reshape(-1), activation_fn=models.SquarePlus)) * v
+    # def nndrag(v, params):
+    #     return - jnp.abs(models.forward_pass(params, v.reshape(-1), activation_fn=models.SquarePlus)) * v
 
-    if ifdrag == 0:
-        print("Drag: 0.0")
+    # if ifdrag == 0:
+    #     print("Drag: 0.0")
 
-        def drag(x, v, params):
-            return 0.0
-    elif ifdrag == 1:
-        print("Drag: nn")
+    #     def drag(x, v, params):
+    #         return 0.0
+    # elif ifdrag == 1:
+    #     print("Drag: nn")
 
-        def drag(x, v, params):
-            return vmap(nndrag, in_axes=(0, None))(v.reshape(-1), params["drag"]).reshape(-1, 1)
+    #     def drag(x, v, params):
+    #         return vmap(nndrag, in_axes=(0, None))(v.reshape(-1), params["drag"]).reshape(-1, 1)
 
-    acceleration_fn_model = accelerationFull(N, dim,
-                                             lagrangian=Lmodel,
-                                             constraints=None,
-                                             non_conservative_forces=drag)
+    # acceleration_fn_model = accelerationFull(N, dim,
+    #                                          lagrangian=Lmodel,
+    #                                          constraints=None,
+    #                                          non_conservative_forces=drag)
 
     def force_fn_model(R, V, params, mass=None):
         if mass is None:
@@ -342,7 +358,7 @@ def main(N=3, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
         return fn
 
     Es_fn = cal_energy_fn(lag=Lactual, params=None)
-    Es_pred_fn = cal_energy_fn(lag=Lmodel, params=params)
+    # Es_pred_fn = cal_energy_fn(lag=Lmodel, params=params)
 
     def net_force_fn(force=None, params=None):
         @jit
@@ -390,23 +406,22 @@ def main(N=3, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
 
         try:
             actual_traj = sim_orig2(R, V)  # full_traj[start_:stop_]
-
             start = time.time()
             pred_traj = sim_model(R, V)
             end = time.time()
-
             t += end - start
 
             if saveovito:
-                save_ovito(f"pred_{ind}.data", [
+                save_ovito(f"pred_{ind}.ovito", [
                     state for state in NVEStates(pred_traj)], lattice="")
-                save_ovito(f"actual_{ind}.data", [
+                save_ovito(f"actual_{ind}.ovito", [
                     state for state in NVEStates(actual_traj)], lattice="")
 
             trajectories += [(actual_traj, pred_traj)]
             savefile("trajectories.pkl", trajectories)
 
             if plotthings:
+                raise Warning("Cannot calculate energy in FGN")
                 for key, traj in {"actual": actual_traj, "pred": pred_traj}.items():
 
                     print(f"plotting energy ({key})...")
@@ -428,7 +443,7 @@ def main(N=3, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
                     ylabel("Energy", ax=axs[0])
                     ylabel("Energy", ax=axs[1])
 
-                    title = f"LGNN {N}-Spring Exp {ind}"
+                    title = f"FGN {N}-Spring Exp {ind}"
                     plt.title(title)
                     plt.savefig(_filename(title.replace(
                         " ", "-")+f"_{key}_traj.png"))
@@ -483,9 +498,8 @@ def main(N=3, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
             nexp["z_actual"] += [actual_traj.position]
             nexp["Zerr"] += [RelErr(actual_traj.position,
                                     pred_traj.position)]
-
             nexp["Perr"] += [RelErr(actual_traj.velocity,
-                                    pred_traj.velocity)]
+                                pred_traj.velocity)]
 
             fig, axs = panel(1, 2, figsize=(20, 5))
             axs[0].plot(Es, label=["PE", "KE", "L", "TE"], lw=6, alpha=0.5)
@@ -498,14 +512,15 @@ def main(N=3, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
             ylabel("Energy", ax=axs[0])
             ylabel("Energy", ax=axs[1])
 
-            title = f"LGNN {N}-Spring Exp {ind} pred traj"
+            title = f"FGN {N}-Spring Exp {ind} pred traj"
             axs[1].set_title(title)
-            title = f"LGNN {N}-Spring Exp {ind} actual traj"
+            title = f"FGN {N}-Spring Exp {ind} actual traj"
             axs[0].set_title(title)
 
             plt.savefig(
-                _filename(f"LGNN {N}-Spring Exp {ind}".replace(" ", "-")+f"_actualH.png"))
+                _filename(f"FGN {N}-Spring Exp {ind}".replace(" ", "-")+f"_actualH.png"))
         except:
+            print("skipped")
             if skip < 20:
                 skip += 1
 
@@ -554,9 +569,10 @@ def main(N=3, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
     gmean_herr = jnp.exp( jnp.log(jnp.array(nexp["Herr"])).mean(axis=0) )
     gmean_perr = jnp.exp( jnp.log(jnp.array(nexp["Perr"])).mean(axis=0) )
 
-    np.savetxt("../spring-zerr/lgnn.txt", gmean_zerr, delimiter = "\n")
-    np.savetxt("../spring-herr/lgnn.txt", gmean_herr, delimiter = "\n")
-    np.savetxt("../spring-perr/lgnn.txt", gmean_perr, delimiter = "\n")
-    np.savetxt("../spring-simulation-time/lgnn.txt", [t/maxtraj], delimiter = "\n")
+    np.savetxt("../spring-generalizibility/3-gnode.txt", gmean_zerr, delimiter = "\n")
+    # np.savetxt("../spring-herr/gnode.txt", gmean_herr, delimiter = "\n")
+    # np.savetxt("../spring-perr/gnode.txt", gmean_perr, delimiter = "\n")
+    # np.savetxt("../spring-simulation-time/gnode.txt", [t/maxtraj], delimiter = "\n")
+
 
 fire.Fire(main)

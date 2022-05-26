@@ -74,7 +74,7 @@ def main(N=2, epochs=10000, seed=42, rname=False,
            namespace=locals())
 
     PSYS = f"{N}-Pendulum"
-    TAG = f"Neural-ODE"
+    TAG = f"Neural-ODE-m"
     out_dir = f"../results"
 
     def _filename(name, tag=TAG):
@@ -204,7 +204,8 @@ def main(N=2, epochs=10000, seed=42, rname=False,
     senders, receivers = pendulum_connections(N)
     eorder = edge_order(N)
 
-    Ef = 2  # eij dim
+
+    Ef = 1  # eij dim
     Nf = dim
     Oh = 1
 
@@ -221,17 +222,17 @@ def main(N=2, epochs=10000, seed=42, rname=False,
         return initialize_mlp(get_layers(in_, out_), key, **kwargs)
 
     # # fne_params = mlp(Oh, Nei, key)
-    fneke_params = initialize_mlp([Oh, Nei], key)
-    fne_params = initialize_mlp([Oh+Nf*2, Nei], key)
+    fneke_params = initialize_mlp([Oh, Nei], key)#not used
+    fne_params = initialize_mlp([Oh, Nei-1-dim], key)#intial node embedding
 
-    fb_params = mlp(Ef, Eei, key)
-    fv_params = mlp(Nei+Eei, Nei, key)
-    fe_params = mlp(Nei, Eei, key)
+    fb_params = mlp(Ef, Eei, key)#initial edge embedding
+    fv_params = mlp(Nei+Eei, Nei, key)#update node
+    fe_params = mlp(Nei, Eei, key)#update edge
 
     ff1_params = mlp(Eei, 1, key)
     ff2_params = mlp(Nei, 1, key)
     ff3_params = mlp(dim+Nei, 1, key)
-    ke_params = initialize_mlp([Nei+1, 32, 32, 2], key, affine=[True])
+    ke_params = initialize_mlp([Nei, 32, 32, 1*dim], key, affine=[True])
 
     Lparams = dict(fb=fb_params,
                    fv=fv_params,
@@ -297,7 +298,7 @@ def main(N=2, epochs=10000, seed=42, rname=False,
     #     return apply
 
     def L_change_fn(params, graph):
-        g, change = cal_graph_modified(params, graph, eorder=eorder,
+        g, change = cal_graph_modified_input(params, graph, eorder=eorder,
                                 useT=True)
         return change
 
@@ -483,9 +484,9 @@ def main(N=2, epochs=10000, seed=42, rname=False,
     savefile(f"trained_model_{ifdrag}_{trainm}.dil", params, metadata={"savedat": epoch})
     savefile(f"loss_array_{ifdrag}_{trainm}.dil",(larray, ltarray), metadata={"savedat": epoch})
 
-    np.savetxt("../training-time/gnode.txt", train_time_arr, delimiter = "\n")
-    np.savetxt("../training-loss/gnode-train.txt", larray, delimiter = "\n")
-    np.savetxt("../training-loss/gnode-test.txt", ltarray, delimiter = "\n")
+    np.savetxt("../training-time/gnode3.txt", train_time_arr, delimiter = "\n")
+    np.savetxt("../training-loss/gnode3-train.txt", larray, delimiter = "\n")
+    np.savetxt("../training-loss/gnode3-test.txt", ltarray, delimiter = "\n")
 
 fire.Fire(main)
 

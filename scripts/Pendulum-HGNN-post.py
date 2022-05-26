@@ -4,6 +4,7 @@
 
 import json
 import sys
+import os
 from datetime import datetime
 from functools import partial, wraps
 from statistics import mode
@@ -34,6 +35,7 @@ from src.models import MSE, initialize_mlp
 from src.nve import NVEStates, nve
 from src.utils import *
 from src.hamiltonian import *
+import time
 
 config.update("jax_enable_x64", True)
 config.update("jax_debug_nans", True)
@@ -48,27 +50,12 @@ def pprint(*args, namespace=globals()):
     for arg in args:
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
-
-# N = 2
-# dim = 2
-# dt = 1.0e-2
-# useN = 2
-# ifdrag = 0
-# seed = 42
-# rname = 0
-# saveovito = 1
-# trainm = 1
-# runs = 1000
-# semilog = 1
-# maxtraj = 10
-# plotthings = True
-# redo = 0
-def main(N=2, dim=2, dt=1.0e-5,stride=1000, useN=2, ifdrag=0, seed=42, rname=0, saveovito=1, trainm=1, runs=1000, semilog=1, maxtraj=10, plotthings=False, redo=0):
+def main(N=2, dim=2, dt=1.0e-5,stride=1000, useN=2, ifdrag=0, seed=100, rname=0, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0):
     print("Configs: ")
     pprint(dt, ifdrag, namespace=locals())
 
-    PSYS = f"ham-{N}-Pendulum"
-    TAG = f"hgnn"
+    PSYS = f"{N}-Pendulum"
+    TAG = f"hgnn-l1"
     out_dir = f"../results"
 
     def _filename(name, tag=TAG, trained=None):
@@ -185,46 +172,6 @@ def main(N=2, dim=2, dt=1.0e-5,stride=1000, useN=2, ifdrag=0, seed=42, rname=0, 
 
     sim_orig = get_forward_sim(
         params=None, zdot_func=zdot_func, runs=maxtraj*runs)
-    # z_out = sim_orig(R, V)
-
-    # x, p = jnp.split(z_out, 2, axis=1)
-
-    # def zz(out, ind=None):
-    #     if ind is None:
-    #         x, p = jnp.split(out, 2, axis=1)
-    #         return x, p
-    #     else:
-    #         return jnp.split(out, 2, axis=1)[ind]
-
-    # t = jnp.linspace(0.0, runs*dt, runs)
-
-    # def simGT():
-    #     print("Simulating ground truth ...")
-    #     out = ode.odeint(zdot_func, z0(R, V), t)
-    #     xout, pout = zz(out)
-
-    #     my_state = States()
-    #     my_state.position = xout
-    #     my_state.velocity = pout
-    #     my_state.force = jnp.zeros(xout.shape)
-    #     my_state.mass = jnp.ones(xout.shape[0])
-    #     _traj = my_state
-
-    #     metadata = {"key": f"maxtraj={maxtraj}, runs={runs}"}
-    #     savefile("gt_trajectories.pkl",
-    #              _traj, metadata=metadata)
-    #     return _traj
-
-    # ..
-    # if fileexist("gt_trajectories.pkl"):
-    #     print("Loading from saved.")
-    #     full_traj, metadata = loadfile("gt_trajectories.pkl")
-    #     full_traj = NVEStates(full_traj)
-    #     if metadata["key"] != f"maxtraj={maxtraj}, runs={runs}":
-    #         print("Metadata doesnot match.")
-    #         full_traj = NVEStates(simGT())
-    # else:
-    #     full_traj = NVEStates(simGT())
 
     ################################################
     ################### ML Model ###################
@@ -284,7 +231,7 @@ def main(N=2, dim=2, dt=1.0e-5,stride=1000, useN=2, ifdrag=0, seed=42, rname=0, 
         x, p = jnp.split(z, 2)
         return zdot_model(x, p, params)
 
-    params = loadfile(f"trained_model.dil", trained=useN)[0]
+    params = loadfile(f"trained_model_low.dil", trained=useN)[0]
 
     sim_model = get_forward_sim(
         params=params, zdot_func=zdot_model_func, runs=runs)
@@ -347,6 +294,8 @@ def main(N=2, dim=2, dt=1.0e-5,stride=1000, useN=2, ifdrag=0, seed=42, rname=0, 
 
     sim_orig2 = get_forward_sim(params=None, zdot_func=zdot_func, runs=runs)
 
+    t=0.0
+
     for ind in range(maxtraj):
         print(f"Simulating trajectory {ind}/{maxtraj}")
         # R = full_traj[_ind].position
@@ -372,6 +321,7 @@ def main(N=2, dim=2, dt=1.0e-5,stride=1000, useN=2, ifdrag=0, seed=42, rname=0, 
         my_state.mass = jnp.ones(x_act_out.shape[0])
         actual_traj = my_state
 
+        start = time.time()
         z_pred_out = sim_model(R, V)
         x_pred_out, p_pred_out = jnp.split(z_pred_out, 2, axis=1)
         zdot_pred_out = jax.vmap(zdot_model, in_axes=(
@@ -384,6 +334,9 @@ def main(N=2, dim=2, dt=1.0e-5,stride=1000, useN=2, ifdrag=0, seed=42, rname=0, 
         my_state_pred.force = force_pred_out
         my_state_pred.mass = jnp.ones(x_pred_out.shape[0])
         pred_traj = my_state_pred
+        end = time.time()
+
+        t+= end - start
 
         # def get_hinge(x):
         #     return jnp.append(x, jnp.zeros([1, 2]), axis=0)
@@ -396,13 +349,13 @@ def main(N=2, dim=2, dt=1.0e-5,stride=1000, useN=2, ifdrag=0, seed=42, rname=0, 
         # h_actual_traj.force = jax.vmap(get_hinge, in_axes=0)(actual_traj.force)
 
         if saveovito:
-            if ind < 1:
-                save_ovito(f"pred_{ind}.data", [
-                    state for state in NVEStates(pred_traj)], lattice="")
-                save_ovito(f"actual_{ind}.data", [
-                    state for state in NVEStates(actual_traj)], lattice="")
-            else:
-                pass
+            # if ind < 1:
+            save_ovito(f"pred_{ind}.data", [
+                state for state in NVEStates(pred_traj)], lattice="")
+            save_ovito(f"actual_{ind}.data", [
+                state for state in NVEStates(actual_traj)], lattice="")
+            # else:
+            #     pass
         trajectories += [(actual_traj, pred_traj)]
         savefile("trajectories.pkl", trajectories)
 
@@ -541,10 +494,22 @@ def main(N=2, dim=2, dt=1.0e-5,stride=1000, useN=2, ifdrag=0, seed=42, rname=0, 
         plt.xlabel("Time")
         plt.savefig(_filename(f"RelError_std_{key}.png"))
 
-    make_plots(
-        nexp, "Zerr", yl=r"$\frac{||\hat{z}-z||_2}{||\hat{z}||_2+||z||_2}$")
-    make_plots(
-        nexp, "Herr", yl=r"$\frac{||H(\hat{z})-H(z)||_2}{||H(\hat{z})||_2+||H(z)||_2}$")
+    make_plots(nexp, "Zerr",
+               yl=r"$\frac{||z_1-z_2||_2}{||z_1||_2+||z_2||_2}$")
+    make_plots(nexp, "Herr",
+               yl=r"$\frac{||H(z_1)-H(z_2)||_2}{||H(z_1)||_2+||H(z_2)||_2}$")
 
+    gmean_zerr = jnp.exp( jnp.log(jnp.array(nexp["Zerr"])).mean(axis=0) )
+    gmean_herr = jnp.exp( jnp.log(jnp.array(nexp["Herr"])).mean(axis=0) )
+
+    np.savetxt("../pendulum-zerr/hgnn-l1.txt", gmean_zerr, delimiter = "\n")
+    np.savetxt("../pendulum-herr/hgnn-l1.txt", gmean_herr, delimiter = "\n")
+    np.savetxt("../pendulum-simulation-time/hgnn-l1.txt", [t/maxtraj], delimiter = "\n")
 
 fire.Fire(main)
+
+
+
+
+
+

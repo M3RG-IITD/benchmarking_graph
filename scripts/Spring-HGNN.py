@@ -38,35 +38,17 @@ from src.nve import nve
 from src.utils import *
 from src.hamiltonian import *
 
+import time
 
 config.update("jax_enable_x64", True)
 config.update("jax_debug_nans", True)
 
-
 def namestr(obj, namespace):
     return [name for name in namespace if namespace[name] is obj]
-
 
 def pprint(*args, namespace=globals()):
     for arg in args:
         print(f"{namestr(arg, namespace)[0]}: {arg}")
-
-
-# N = 3
-# epochs = 10000
-# seed = 42
-# rname = True
-# saveat = 100
-# dt = 1.0e-3
-# stride = 100
-# ifdrag = 0
-# trainm = 1
-# grid = False
-# mpass = 1
-# lr = 0.001
-# withdata = None
-# datapoints = None
-# batch_size = 1000
 
 def main(N = 5, epochs = 10000, seed = 42, rname = False, saveat = 100, dt = 1.0e-3, stride = 100, ifdrag = 0, trainm = 1, grid = False, mpass = 1, lr = 0.001, withdata = None, datapoints = None, batch_size = 1000):
     print("Configs: ")
@@ -77,7 +59,6 @@ def main(N = 5, epochs = 10000, seed = 42, rname = False, saveat = 100, dt = 1.0
     PSYS = f"{N}-Spring"
     TAG = f"hgnn"
     out_dir = f"../results"
-
 
     def _filename(name, tag=TAG):
         # rstring = randfilename if (rname and (tag != "data")) else (
@@ -376,6 +357,9 @@ def main(N = 5, epochs = 10000, seed = 42, rname = False, saveat = 100, dt = 1.0
     larray = []
     ltarray = []
 
+    start = time.time()
+    train_time_arr = []
+
     for epoch in range(epochs):
         l = 0.0
         for data in zip(bRs, bVs, bZs_dot):
@@ -407,6 +391,9 @@ def main(N = 5, epochs = 10000, seed = 42, rname = False, saveat = 100, dt = 1.0
                     params, metadata=metadata)
             savefile(f"loss_array_{ifdrag}_{trainm}.dil",
                     (larray, ltarray), metadata=metadata)
+
+        now = time.time()
+        train_time_arr.append((now - start))
     
     fig, axs = plt.subplots(1, 1)
     plt.semilogy(larray, label="Training")
@@ -430,5 +417,11 @@ def main(N = 5, epochs = 10000, seed = 42, rname = False, saveat = 100, dt = 1.0
     savefile(f"loss_array_{ifdrag}_{trainm}.dil",
             (larray, ltarray), metadata={"savedat": epoch})
 
+    np.savetxt("../Spring-training-time/hgnn.txt", train_time_arr, delimiter = "\n")
+    np.savetxt("../Spring-training-loss/hgnn-train.txt", larray, delimiter = "\n")
+    np.savetxt("../Spring-training-loss/hgnn-test.txt", ltarray, delimiter = "\n")
 
 fire.Fire(main)
+
+
+

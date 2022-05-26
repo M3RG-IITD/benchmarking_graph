@@ -53,11 +53,11 @@ class Datastate:
 
 
 
-def main(N=2, dim=2, saveat=100, nconfig=1000, ifdrag=0, runs=1001):
+def main(N=2, dim=2, saveat=100, nconfig=1000, ifdrag=0, runs=101):
 
     tag = f"{N}-Pendulum-data"
     seed = 42
-    out_dir = f"../results"
+    out_dir = f"../data-efficiency"
     rname = False
     rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "1"
     filename_prefix = f"{out_dir}/{tag}/{rstring}/"

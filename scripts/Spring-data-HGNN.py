@@ -51,7 +51,7 @@ def main(N=5, dim=2, nconfig=1000, saveat=100, ifdrag=0, dt=1e-3, stride = 100, 
 
     tag = f"{N}-Spring-data"
     seed = 42
-    out_dir = f"../results"
+    out_dir = f"../data-efficiency"
     rname = False
     rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "2"
     filename_prefix = f"{out_dir}/{tag}/{rstring}/"

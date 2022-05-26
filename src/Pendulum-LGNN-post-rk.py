@@ -2,6 +2,7 @@
 ################## IMPORT ######################
 ################################################
 
+# from fcntl import F_SEAL_SEAL
 import json
 import sys
 import os
@@ -17,13 +18,13 @@ from jax import jit, random, value_and_grad, vmap
 from jax.experimental import optimizers
 from jax_md import space
 from pyexpat import model
-# from shadow.plot import *
-# from sklearn.metrics import r2_score
+#from shadow.plot import *
 import matplotlib.pyplot as plt
+#from sklearn.metrics import r2_score
+# from scipy.stats import gmean
 
 from psystems.npendulum import (PEF, edge_order, get_init, hconstraints,
                                 pendulum_connections)
-
 
 MAINPATH = ".."  # nopep8
 sys.path.append(MAINPATH)  # nopep8
@@ -35,7 +36,6 @@ from src import lnn
 from src.graph import *
 from src.lnn import acceleration, accelerationFull, accelerationTV
 from src.md import *
-from src.md import predition2
 from src.models import MSE, initialize_mlp
 from src.nve import NVEStates, nve
 from src.utils import *
@@ -61,7 +61,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
            namespace=locals())
 
     PSYS = f"{N}-Pendulum"
-    TAG = f"Neural-ODE"
+    TAG = f"lgnn"
     out_dir = f"../results"
 
     def _filename(name, tag=TAG, trained=None):
@@ -174,7 +174,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
     def get_forward_sim(params=None, force_fn=None, runs=10):
         @jit
         def fn(R, V):
-            return predition(R,  V, params, force_fn, shift, dt, masses, stride=stride, runs=runs)
+            return predition4(R,  V, params, force_fn, shift, dt, masses, stride=stride, runs=runs)
         return fn
 
     sim_orig = get_forward_sim(
@@ -239,33 +239,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
         n_edge=jnp.array([senders.shape[0]]),
         globals={})
 
-    # def energy_fn(species):
-    #     senders, receivers = [np.array(i)
-    #                           for i in pendulum_connections(R.shape[0])]
-    #     state_graph = jraph.GraphsTuple(nodes={
-    #         "position": R,
-    #         "velocity": V,
-    #         "type": species
-    #     },
-    #         edges={},
-    #         senders=senders,
-    #         receivers=receivers,
-    #         n_node=jnp.array([R.shape[0]]),
-    #         n_edge=jnp.array([senders.shape[0]]),
-    #         globals={})
-
-    #     def apply(R, V, params):
-    #         state_graph.nodes.update(position=R)
-    #         state_graph.nodes.update(velocity=V)
-    #         return L_energy_fn(params, state_graph)
-    #     return apply
-
-    def L_change_fn(params, graph):
-        g, change = cal_graph_modified(params, graph, eorder=eorder,
-                                useT=True)
-        return change
-
-    def change_fn(species):
+    def energy_fn(species):
         senders, receivers = [np.array(i)
                               for i in pendulum_connections(R.shape[0])]
         state_graph = jraph.GraphsTuple(nodes={
@@ -283,33 +257,13 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
         def apply(R, V, params):
             state_graph.nodes.update(position=R)
             state_graph.nodes.update(velocity=V)
-            return L_change_fn(params, state_graph)
+            return L_energy_fn(params, state_graph)
         return apply
 
-    # apply_fn = energy_fn(species)
-    apply_fn = change_fn(species)
+    apply_fn = energy_fn(species)
     v_apply_fn = vmap(apply_fn, in_axes=(None, 0))
 
     def Lmodel(x, v, params): return apply_fn(x, v, params["L"])
-    
-    # def change_R_V(N, dim):
-
-    #     def fn(Rs, Vs, params):
-    #         return Lmodel(Rs, Vs, params)
-    #     return fn
-    
-    # change_R_V_ = change_R_V(N, dim)
-
-    def change_Acc(N, dim):
-        def fn(Rs, Vs, params):
-            return Lmodel(Rs, Vs, params)
-        return fn
-    
-    change_Acc = change_Acc(N, dim)
-
-    # v_change_R_V_ = vmap(change_R_V_, in_axes=(0, 0, None))
-
-    
 
     def nndrag(v, params):
         return - jnp.abs(models.forward_pass(params, v.reshape(-1), activation_fn=models.SquarePlus)) * v
@@ -338,21 +292,8 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
 
     params = loadfile(f"trained_model.dil", trained=useN)[0]
 
-    # sim_model = get_forward_sim(
-    #     params=params, force_fn=force_fn_model, runs=runs)
-
-    # def delta_R_V_given_R_V(params):
-    #     def fn(R, V):
-    #         return v_change_R_V_(R, V, params)
-    #     return fn
-
-    def get_forward_sim_neural_ode(params = None, run = runs):
-        @jit
-        def fn(R, V):
-            return predition3(R,  V, params, change_Acc, dt, masses, stride=stride, runs=run)
-        return fn
-
-    sim_model = get_forward_sim_neural_ode(params=params, run=runs)
+    sim_model = get_forward_sim(
+        params=params, force_fn=force_fn_model, runs=runs)
 
     ################################################
     ############## forward simulation ##############
@@ -384,7 +325,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
         return fn
 
     Es_fn = cal_energy_fn(lag=Lactual, params=None)
-    # Es_pred_fn = cal_energy_fn(lag=Lmodel, params=params)
+    Es_pred_fn = cal_energy_fn(lag=Lmodel, params=params)
 
     def net_force_fn(force=None, params=None):
         @jit
@@ -441,9 +382,9 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
                 print(f"plotting energy ({key})...")
 
                 Es = Es_fn(traj)
-                Es_pred = Es_fn(traj)
+                Es_pred = Es_pred_fn(traj)
 
-                # Es_pred = Es_pred - Es_pred[0] + Es[0]
+                Es_pred = Es_pred - Es_pred[0] + Es[0]
 
                 fig, axs = plt.subplots(1, 2, figsize=(20, 5))
                 axs[0].plot(Es, label=["PE", "KE", "L", "TE"], lw=6, alpha=0.5)
@@ -454,15 +395,16 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
                 plt.xlabel("Time step")
                 plt.ylabel("Energy")
 
-                title = f"(Neural ODE) {N}-Pendulum Exp {ind}"
+                title = f"(LGNN) {N}-Pendulum Exp rk {ind}"
                 plt.title(title)
                 plt.savefig(_filename(title.replace(" ", "-")+f"_{key}.png"))
 
                 net_force_orig = net_force_orig_fn(traj)
                 net_force_model = net_force_model_fn(traj)
-
+		
+                plt.clf()
                 fig, axs = plt.subplots(1+R.shape[0], 1, figsize=(20,
-                                                           R.shape[0]*5), hshift=0.1, vs=0.35)
+                                                           R.shape[0]*5))
                 for i, ax in zip(range(R.shape[0]+1), axs):
                     if i == 0:
                         ax.text(0.6, 0.8, "Averaged over all particles",
@@ -484,7 +426,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
                     ax.set_ylabel("Net force")
                     ax.set_xlabel("Time step")
                     ax.set_title(f"{N}-Pendulum Exp {ind}")
-                plt.savefig(_filename(f"net_force_Exp_{ind}_{key}.png"))
+                plt.savefig(_filename(f"net_force_Exp_rk_{ind}_{key}.png"))
 
         Es = Es_fn(actual_traj)
         Eshat = Es_fn(pred_traj)
@@ -499,18 +441,23 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
         nexp["Zerr"] += [RelErr(actual_traj.position,
                                 pred_traj.position)]
 
+        plt.clf()
         fig, axs = plt.subplots(1, 2, figsize=(20, 5))
         axs[0].plot(Es, label=["PE", "KE", "L", "TE"], lw=6, alpha=0.5)
         axs[1].plot(Eshat, "--", label=["PE", "KE", "L", "TE"])
         plt.legend(bbox_to_anchor=(1, 1), loc=2)
         axs[0].set_facecolor("w")
 
+        #xlabel("Time step", ax=axs[0])
+        #xlabel("Time step", ax=axs[1])
+        #ylabel("Energy", ax=axs[0])
+        #ylabel("Energy", ax=axs[1])
         plt.xlabel("Time step")
         plt.ylabel("Energy")
 
-        title = f"Neural ODE {N}-Pendulum Exp {ind} Lmodel"
+        title = f"LGNN {N}-Pendulum Exp {ind} Lmodel rk"
         axs[1].set_title(title)
-        title = f"Neural ODE {N}-Pendulum Exp {ind} Lactual"
+        title = f"LGNN {N}-Pendulum Exp {ind} Lactual rk"
         axs[0].set_title(title)
 
         plt.savefig(_filename(title.replace(" ", "-")+f".png"))
@@ -519,6 +466,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
 
     def make_plots(nexp, key, yl="Err", xl="Time", key2=None):
         print(f"Plotting err for {key}")
+        plt.clf()
         fig, axs = plt.subplots(1, 1)
         filepart = f"{key}"
         for i in range(len(nexp[key])):
@@ -536,8 +484,9 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
         plt.ylabel(yl)
         plt.xlabel(xl)
 
-        plt.savefig(_filename(f"RelError_{filepart}.png"))
+        plt.savefig(_filename(f"RelError-rk_{filepart}.png"))
 
+        plt.clf()
         fig, axs = plt.subplots(1, 1)
         mean_ = jnp.log(jnp.array(nexp[key])).mean(axis=0)
         std_ = jnp.log(jnp.array(nexp[key])).std(axis=0)
@@ -554,7 +503,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
         plt.fill_between(x, low_b, up_b, alpha=0.5)
         plt.ylabel(yl)
         plt.xlabel("Time")
-        plt.savefig(_filename(f"RelError_std_{key}.png"))
+        plt.savefig(_filename(f"RelError_std-rk_{key}.png"))
 
     make_plots(nexp, "Zerr",
                yl=r"$\frac{||\hat{z}-z||_2}{||\hat{z}||_2+||z||_2}$")
@@ -564,10 +513,14 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
     gmean_zerr = jnp.exp( jnp.log(jnp.array(nexp["Zerr"])).mean(axis=0) )
     gmean_herr = jnp.exp( jnp.log(jnp.array(nexp["Herr"])).mean(axis=0) )
 
-    np.savetxt("../zerr/gnode1.txt", gmean_zerr, delimiter = "\n")
-    np.savetxt("../herr/gnode1.txt", gmean_herr, delimiter = "\n")
+    np.savetxt("../zerr/lgnn-rk.txt", gmean_zerr, delimiter = "\n")
+    np.savetxt("../herr/lgnn-rk.txt", gmean_herr, delimiter = "\n")
 
 fire.Fire(main)
+
+
+
+
 
 
 

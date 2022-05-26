@@ -4,6 +4,7 @@
 
 import json
 import sys
+import os
 from datetime import datetime
 from functools import partial, wraps
 from statistics import mode
@@ -16,9 +17,10 @@ from jax import jit, random, value_and_grad, vmap
 from jax.experimental import optimizers
 from jax_md import space
 from pyexpat import model
-from shadow.plot import *
-from sklearn.metrics import r2_score
-from torch import ne
+import matplotlib.pyplot as plt
+# from shadow.plot import *
+# from sklearn.metrics import r2_score
+# from torch import ne
 
 from psystems.npendulum import (PEF, edge_order, get_init, hconstraints,
                                 pendulum_connections)
@@ -51,7 +53,7 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=2, dim=2, dt=1.0e-5, ifdrag=0, saveovito=0, semilog=1, stride=1000, seed=100, rname=0, runs=10, maxtraj=1, plotthings=False):
+def main(N=2, dim=2, dt=1.0e-5, ifdrag=0, saveovito=1, semilog=1, stride=1000, seed=100, rname=0, runs=100, maxtraj=100, plotthings=False):
 
     print("Configs: ")
     pprint(dt, stride,
@@ -192,7 +194,7 @@ def main(N=2, dim=2, dt=1.0e-5, ifdrag=0, saveovito=0, semilog=1, stride=1000, s
         else:
             return acceleration_fn_model(R, V, params)*mass.reshape(-1, 1)
 
-    params = loadfile(f"lnn_trained_model_{ifdrag}.dil")[0]
+    params = loadfile(f"trained_model_{ifdrag}.dil")[0]
 
     sim_model = get_forward_sim(
         params=params, force_fn=force_fn_model, runs=runs)
@@ -289,8 +291,8 @@ def main(N=2, dim=2, dt=1.0e-5, ifdrag=0, saveovito=0, semilog=1, stride=1000, s
                 plt.legend(bbox_to_anchor=(1, 1), loc=2)
                 axs[0].set_facecolor("w")
 
-                xlabel("Time step", ax=axs)
-                ylabel("Energy", ax=axs)
+                plt.xlabel("Time step")
+                plt.ylabel("Energy")
 
                 title = f"LNN {N}-Pendulum Exp {ind}"
                 plt.title(title)
@@ -300,8 +302,8 @@ def main(N=2, dim=2, dt=1.0e-5, ifdrag=0, saveovito=0, semilog=1, stride=1000, s
                 net_force_orig = net_force_orig_fn(traj)
                 net_force_model = net_force_model_fn(traj)
 
-                fig, axs = panel(1+R.shape[0], 1, figsize=(20,
-                                                           R.shape[0]*5), hshift=0.1, vs=0.35)
+                # fig, axs = panel(1+R.shape[0], 1, figsize=(20,
+                #                                            R.shape[0]*5), hshift=0.1, vs=0.35)
                 for i, ax in zip(range(R.shape[0]+1), axs):
                     if i == 0:
                         ax.text(0.6, 0.8, "Averaged over all particles",
@@ -339,16 +341,16 @@ def main(N=2, dim=2, dt=1.0e-5, ifdrag=0, saveovito=0, semilog=1, stride=1000, s
         nexp["Zerr"] += [RelErr(actual_traj.position,
                                 pred_traj.position)]
 
-        fig, axs = panel(1, 2, figsize=(20, 5))
+        fig, axs = plt.subplots(1, 2, figsize=(20, 5))
         axs[0].plot(Es, label=["PE", "KE", "L", "TE"], lw=6, alpha=0.5)
         axs[1].plot(Eshat, "--", label=["PE", "KE", "L", "TE"])
         plt.legend(bbox_to_anchor=(1, 1), loc=2)
         axs[0].set_facecolor("w")
 
-        xlabel("Time step", ax=axs[0])
-        xlabel("Time step", ax=axs[1])
-        ylabel("Energy", ax=axs[0])
-        ylabel("Energy", ax=axs[1])
+        plt.xlabel("Time step")
+        # xlabel("Time step", ax=axs[1])
+        plt.ylabel("Energy")
+        # ylabel("Energy", ax=axs[1])
 
         title = f"LNN {N}-Pendulum Exp {ind} Lmodel"
         axs[1].set_title(title)
@@ -361,7 +363,7 @@ def main(N=2, dim=2, dt=1.0e-5, ifdrag=0, saveovito=0, semilog=1, stride=1000, s
 
     def make_plots(nexp, key, yl="Err"):
         print(f"Plotting err for {key}")
-        fig, axs = panel(1, 1)
+        fig, axs = plt.subplots(1, 1)
         for i in range(len(nexp[key])):
             if semilog:
                 plt.semilogy(nexp[key][i].flatten())
@@ -372,7 +374,7 @@ def main(N=2, dim=2, dt=1.0e-5, ifdrag=0, saveovito=0, semilog=1, stride=1000, s
         plt.xlabel("Time")
         plt.savefig(_filename(f"RelError_{key}_{ifdrag}.png"))
 
-        fig, axs = panel(1, 1)
+        fig, axs = plt.subplots(1, 1)
         mean_ = jnp.log(jnp.array(nexp[key])).mean(axis=0)
         std_ = jnp.log(jnp.array(nexp[key])).std(axis=0)
 
@@ -388,12 +390,26 @@ def main(N=2, dim=2, dt=1.0e-5, ifdrag=0, saveovito=0, semilog=1, stride=1000, s
         plt.fill_between(x, low_b, up_b, alpha=0.5)
         plt.ylabel(yl)
         plt.xlabel("Time")
-        plt.savefig(_filename(f"lnn_RelError_std_{key}_{ifdrag}.png"))
+        plt.savefig(_filename(f"RelError_std_{key}_{ifdrag}.png"))
 
     make_plots(nexp, "Zerr",
                yl=r"$\frac{||\hat{z}-z||_2}{||\hat{z}||_2+||z||_2}$")
     make_plots(nexp, "Herr",
                yl=r"$\frac{||H(\hat{z})-H(z)||_2}{||H(\hat{z})||_2+||H(z)||_2}$")
 
+    gmean_zerr = jnp.exp( jnp.log(jnp.array(nexp["Zerr"])).mean(axis=0) )
+    gmean_herr = jnp.exp( jnp.log(jnp.array(nexp["Herr"])).mean(axis=0) )
+
+    np.savetxt("../zerr/lnn.txt", gmean_zerr, delimiter = "\n")
+    np.savetxt("../herr/lnn.txt", gmean_herr, delimiter = "\n")
+
 
 fire.Fire(main)
+
+
+
+
+
+
+
+

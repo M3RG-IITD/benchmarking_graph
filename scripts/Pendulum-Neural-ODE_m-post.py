@@ -61,7 +61,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
            namespace=locals())
 
     PSYS = f"{N}-Pendulum"
-    TAG = f"Neural-ODE"
+    TAG = f"Neural-ODE-m"
     out_dir = f"../results"
 
     def _filename(name, tag=TAG, trained=None):
@@ -261,7 +261,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
     #     return apply
 
     def L_change_fn(params, graph):
-        g, change = cal_graph_modified(params, graph, eorder=eorder,
+        g, change = cal_graph_modified_input(params, graph, eorder=eorder,
                                 useT=True)
         return change
 
@@ -564,10 +564,8 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
     gmean_zerr = jnp.exp( jnp.log(jnp.array(nexp["Zerr"])).mean(axis=0) )
     gmean_herr = jnp.exp( jnp.log(jnp.array(nexp["Herr"])).mean(axis=0) )
 
-    np.savetxt("../zerr/gnode1.txt", gmean_zerr, delimiter = "\n")
-    np.savetxt("../herr/gnode1.txt", gmean_herr, delimiter = "\n")
+    np.savetxt("../zerr/gnode3.txt", gmean_zerr, delimiter = "\n")
+    np.savetxt("../herr/gnode3.txt", gmean_herr, delimiter = "\n")
+
 
 fire.Fire(main)
-
-
-

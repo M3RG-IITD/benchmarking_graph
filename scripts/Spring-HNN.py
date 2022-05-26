@@ -4,9 +4,9 @@
 
 import json
 import sys
-import os
 from datetime import datetime
 from functools import partial, wraps
+from logging import exception
 
 import fire
 import jax
@@ -15,14 +15,11 @@ import numpy as np
 from jax import jit, random, value_and_grad, vmap
 from jax.experimental import optimizers
 from jax_md import space
-# from shadow.plot import *
-# from sklearn.metrics import r2_score
-# from torch import mode
-import matplotlib.pyplot as plt
+from shadow.plot import *
+from sklearn.metrics import r2_score
+from torch import mode
 
-from psystems.npendulum import PEF, get_init, hconstraints
-
-import time
+from psystems.nsprings import get_init
 
 MAINPATH = ".."  # nopep8
 sys.path.append(MAINPATH)  # nopep8
@@ -37,6 +34,7 @@ from src.md import *
 from src.models import MSE, initialize_mlp
 from src.nve import nve
 from src.utils import *
+from src.hamiltonian import *
 
 config.update("jax_enable_x64", True)
 config.update("jax_debug_nans", True)
@@ -52,20 +50,23 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=2, epochs=10000, seed=42, rname=False,
-         dt=1.0e-5, stride=1000, ifdrag=0, lr=0.001, batch_size=1000):
+def main(N=2, epochs=10000, seed=42, rname=False, ifdrag=0,
+         dt=1.0e-3, stride=100, lr=0.001, datapoints=None, saveat=10, batch_size=2000):
 
     print("Configs: ")
     pprint(N, epochs, seed, rname,
            dt, stride, lr, batch_size,
            namespace=locals())
 
-    PSYS = f"{N}-Pendulum"
+    randfilename = datetime.now().strftime(
+        "%m-%d-%Y_%H-%M-%S") + f"_{datapoints}"
+
+    PSYS = f"{N}-Spring"
     TAG = f"lnn"
     out_dir = f"../results"
 
     def _filename(name, tag=TAG):
-        rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "0"
+        rstring = randfilename if (rname and (tag != "data")) else "0"
         filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
@@ -97,35 +98,60 @@ def main(N=2, epochs=10000, seed=42, rname=False,
     except:
         raise Exception("Generate dataset first.")
 
+    if datapoints is not None:
+        dataset_states = dataset_states[:datapoints]
+
     model_states = dataset_states[0]
+    z_out, zdot_out = model_states
 
     print(
         f"Total number of data points: {len(dataset_states)}x{model_states.position.shape[0]}")
 
-    N, dim = model_states.position.shape[-2:]
-    masses = model_states.mass[0].flatten()
-    species = jnp.zeros(N, dtype=int)
+    N2, dim = z_out.shape[-2:]
+    N = N2//2
 
-    Rs, Vs, Fs = States().fromlist(dataset_states).get_array()
-    Rs = Rs.reshape(-1, N, dim)
-    Vs = Vs.reshape(-1, N, dim)
-    Fs = Fs.reshape(-1, N, dim)
+    # N, dim = model_states.position.shape[-2:]
+    # masses = model_states.mass[0].flatten()
+    # species = jnp.zeros(N, dtype=int)
 
-    mask = np.random.choice(len(Rs), len(Rs), replace=False)
-    allRs = Rs[mask]
-    allVs = Vs[mask]
-    allFs = Fs[mask]
+    # Rs, Vs, Fs = States().fromlist(dataset_states).get_array()
+    # Rs = Rs.reshape(-1, N, dim)
+    # Vs = Vs.reshape(-1, N, dim)
+    # Fs = Fs.reshape(-1, N, dim)
+    array = jnp.array([jnp.array(i) for i in dataset_states])
 
-    Ntr = int(0.75*len(Rs))
-    Nts = len(Rs) - Ntr
+    Zs = array[:, 0, :, :, :]
+    Zs_dot = array[:, 1, :, :, :]
 
-    Rs = allRs[:Ntr]
-    Vs = allVs[:Ntr]
-    Fs = allFs[:Ntr]
+    Zs = Zs.reshape(-1, N2, dim)
+    Zs_dot = Zs_dot.reshape(-1, N2, dim)
 
-    Rst = allRs[Ntr:]
-    Vst = allVs[Ntr:]
-    Fst = allFs[Ntr:]
+    # mask = np.random.choice(len(Rs), len(Rs), replace=False)
+    mask = np.random.choice(len(Zs), len(Zs), replace=False)
+    allZs = Zs[mask]
+    allZs_dot = Zs_dot[mask]
+    # allRs = Rs[mask]
+    # allVs = Vs[mask]
+    # allFs = Fs[mask]
+
+    # Ntr = int(0.75*len(Rs))
+    # Nts = len(Rs) - Ntr
+    Ntr = int(0.75*len(Zs))
+    Nts = len(Zs) - Ntr
+
+    Zs = allZs[:Ntr]
+    Zs_dot = allZs_dot[:Ntr]
+
+    Zst = allZs[Ntr:]
+    Zst_dot = allZs_dot[Ntr:]
+
+    # Rs = allRs[:Ntr]
+    # Vs = allVs[:Ntr]
+    # Fs = allFs[:Ntr]
+
+    # Rst = allRs[Ntr:]
+    # Vst = allVs[Ntr:]
+    # Fst = allFs[Ntr:]
 
     ################################################
     ################## SYSTEM ######################
@@ -137,8 +163,8 @@ def main(N=2, epochs=10000, seed=42, rname=False,
     # def Lactual(x, v, params):
     #     return kin_energy(v) - pot_energy_orig(x)
 
-    def constraints(x, v, params):
-        return jax.jacobian(lambda x: hconstraints(x.reshape(-1, dim)), 0)(x)
+    # def constraints(x, v, params):
+    #     return jax.jacobian(lambda x: hconstraints(x.reshape(-1, dim)), 0)(x)
 
     # def external_force(x, v, params):
     #     F = 0*R
@@ -174,8 +200,8 @@ def main(N=2, epochs=10000, seed=42, rname=False,
     lnn_params_pe = MLP(N*dim, 1, key)
     lnn_params_ke = jnp.array(np.random.randn(N))
 
-    def Lmodel(x, v, params):
-        return ((params["lnn_ke"] * jnp.square(v).sum(axis=1)).sum() -
+    def Hmodel(x, v, params):
+        return ((params["lnn_ke"] * jnp.square(v).sum(axis=1)).sum() +
                 forward_pass(params["lnn_pe"], x.flatten(), activation_fn=SquarePlus)[0])
 
     params = {"lnn_pe": lnn_params_pe, "lnn_ke": lnn_params_ke}
@@ -183,33 +209,38 @@ def main(N=2, epochs=10000, seed=42, rname=False,
     def nndrag(v, params):
         return - jnp.abs(models.forward_pass(params, v.reshape(-1), activation_fn=models.SquarePlus)) * v
 
-    if ifdrag:
-        print("Drag: learnable")
-
-        def drag(x, v, params):
-            return vmap(nndrag, in_axes=(0, None))(v.reshape(-1), params["drag"]).reshape(-1, 1)
-    else:
-        print("No drag.")
+    if ifdrag == 0:
+        print("Drag: 0.0")
 
         def drag(x, v, params):
             return 0.0
+    elif ifdrag == 1:
+        print("Drag: -0.1*v")
+
+        def drag(x, v, params):
+            return vmap(nndrag, in_axes=(0, None))(v.reshape(-1), params["drag"]).reshape(-1, 1)
 
     params["drag"] = initialize_mlp([1, 5, 5, 1], key)
 
-    acceleration_fn_model = src.lnn.accelerationFull(N, dim,
-                                                     lagrangian=Lmodel,
-                                                     constraints=constraints,
-                                                     non_conservative_forces=drag)
-    v_acceleration_fn_model = vmap(acceleration_fn_model, in_axes=(0, 0, None))
+    # acceleration_fn_model = src.lnn.accelerationFull(N, dim,
+    #                                                  lagrangian=Lmodel,
+    #                                                  constraints=None,
+    #                                                  non_conservative_forces=drag)
+    # v_acceleration_fn_model = vmap(acceleration_fn_model, in_axes=(0, 0, None))
+    zdot_model, lamda_force_model = get_zdot_lambda(
+        N, dim, hamiltonian=Hmodel, drag=drag, constraints=None)
+
+
+    v_zdot_model = vmap(zdot_model, in_axes=(0, 0, None))
 
     ################################################
     ################## ML Training #################
     ################################################
 
     @jit
-    def loss_fn(params, Rs, Vs, Fs):
-        pred = v_acceleration_fn_model(Rs, Vs, params)
-        return MSE(pred, Fs)
+    def loss_fn(params, Rs, Vs, Zs_dot):
+        pred = v_zdot_model(Rs, Vs, params)
+        return MSE(pred, Zs_dot)
 
     def gloss(*args):
         return value_and_grad(loss_fn)(*args)
@@ -255,7 +286,11 @@ def main(N=2, epochs=10000, seed=42, rname=False,
                                    for i in range(nbatches)])]
         return newargs
 
-    bRs, bVs, bFs = batching(Rs, Vs, Fs, size=batch_size)
+    Rs, Vs = jnp.split(Zs, 2, axis=1)
+    Rst, Vst = jnp.split(Zst, 2, axis=1)
+
+    bRs, bVs, bZs_dot = batching(Rs, Vs, Zs_dot,
+                                size=min(len(Rs), batch_size))
 
     print(f"training ...")
 
@@ -265,56 +300,40 @@ def main(N=2, epochs=10000, seed=42, rname=False,
     larray = []
     ltarray = []
 
-    start = time.time()
-    train_time_arr = []
+    part = f"{ifdrag}_{datapoints}"
 
     for epoch in range(epochs):
         l = 0.0
-        count = 0
-        for data in zip(bRs, bVs, bFs):
+        for data in zip(bRs, bVs, bZs_dot):
             optimizer_step += 1
             opt_state, params, l_ = step(
                 optimizer_step, (opt_state, params, 0), *data)
             l += l_
-            count += 1
 
-        l = l/count
-        larray += [l]
-
-        if epoch % 1 == 0:
-            # l = loss_fn(params, Rs, Vs, Fs)
-            # larray += [l]
-            ltarray += [loss_fn(params, Rst, Vst, Fst)]
-            print(
-                f"Epoch: {epoch}/{epochs} Loss (MSE):  test={ltarray[-1]}, train={larray[-1]}")
-        if epoch % 10 == 0:
-            savefile(f"trained_model_{ifdrag}.dil",
+        if epoch % saveat == 0:
+            l = loss_fn(params, Rs, Vs, Zs_dot)
+            larray += [l]
+            ltarray += [loss_fn(params, Rst, Vst, Zst_dot)]
+            print(f"Epoch: {epoch}/{epochs}  {larray[-1]}, {ltarray[-1]}")
+        if epoch % saveat == 0:
+            savefile(f"trained_model_{part}.dil",
                      params, metadata={"savedat": epoch})
-            savefile(f"loss_array_{ifdrag}.dil",
+            savefile(f"loss_array_{part}.dil",
                      (larray, ltarray), metadata={"savedat": epoch})
 
-        now = time.time()
-        train_time_arr.append((now - start))
-
-    fig, axs = plt.subplots(1, 1)
+    fig, axs = panel(1, 1)
     plt.plot(larray, label="Training")
     plt.plot(ltarray, label="Test")
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
     plt.legend()
-    plt.savefig(_filename(f"training_loss_{ifdrag}.png"))
+    plt.savefig(_filename(f"training_loss_{part}.png"))
 
     params = get_params(opt_state)
-    savefile(f"trained_model_{ifdrag}.dil",
+    savefile(f"trained_model_{part}.dil",
              params, metadata={"savedat": epoch})
-    savefile(f"loss_array_{ifdrag}.dil",
+    savefile(f"loss_array_{part}.dil",
              (larray, ltarray), metadata={"savedat": epoch})
 
-    np.savetxt("../training-time/lnn.txt", train_time_arr, delimiter = "\n")
-    np.savetxt("../training-loss/lnn-train.txt", larray, delimiter = "\n")
-    np.savetxt("../training-loss/lnn-test.txt", ltarray, delimiter = "\n")
 
 fire.Fire(main)
-
-
-

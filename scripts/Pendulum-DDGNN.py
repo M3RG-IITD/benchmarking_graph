@@ -24,8 +24,6 @@ import matplotlib.pyplot as plt
 from psystems.npendulum import (PEF, edge_order, get_init, hconstraints,
                                 pendulum_connections)
 
-import time
-
 MAINPATH = ".."  # nopep8
 sys.path.append(MAINPATH)  # nopep8
 
@@ -39,6 +37,8 @@ from src.md import *
 from src.models import MSE, initialize_mlp
 from src.nve import nve
 from src.utils import *
+
+import time
 
 config.update("jax_enable_x64", True)
 config.update("jax_debug_nans", True)
@@ -74,7 +74,7 @@ def main(N=2, epochs=10000, seed=42, rname=False,
            namespace=locals())
 
     PSYS = f"{N}-Pendulum"
-    TAG = f"Neural-ODE"
+    TAG = f"ddgnn"
     out_dir = f"../results"
 
     def _filename(name, tag=TAG):
@@ -158,7 +158,7 @@ def main(N=2, epochs=10000, seed=42, rname=False,
     Rdst = allRds[Ntr:]
     Vdst = allVds[Ntr:]
 
-    # print(Rs.shape)
+    #print(Rs.shape)
 
     ################################################
     ################## SYSTEM ######################
@@ -231,7 +231,7 @@ def main(N=2, epochs=10000, seed=42, rname=False,
     ff1_params = mlp(Eei, 1, key)
     ff2_params = mlp(Nei, 1, key)
     ff3_params = mlp(dim+Nei, 1, key)
-    ke_params = initialize_mlp([Nei+1, 32, 32, 2], key, affine=[True])
+    ke_params = initialize_mlp([Nei+1, 32, 32, 4], key, affine=[True])
 
     Lparams = dict(fb=fb_params,
                    fv=fv_params,
@@ -353,24 +353,15 @@ def main(N=2, epochs=10000, seed=42, rname=False,
     v_acceleration_fn_model = vmap(acceleration_fn_model, in_axes=(0, 0, None))
 
 
-    # def change_R_V(N, dim):
+    def change_R_V(N, dim):
 
-        # def fn(Rs, Vs, params):
-        #     return Lmodel(Rs, Vs, params)
-        # return fn
-    
-    # change_R_V_ = change_R_V(N, dim)
-
-    # v_change_R_V_ = vmap(change_R_V_, in_axes=(0, 0, None))
-
-    def change_Acc(N, dim):
         def fn(Rs, Vs, params):
             return Lmodel(Rs, Vs, params)
         return fn
     
-    change_Acc = change_Acc(N, dim)
+    change_R_V_ = change_R_V(N, dim)
 
-    v_acceleration_neural_ode = vmap(change_Acc, in_axes=(0, 0, None))
+    v_change_R_V_ = vmap(change_R_V_, in_axes=(0, 0, None))
 
 
 
@@ -379,15 +370,12 @@ def main(N=2, epochs=10000, seed=42, rname=False,
     ################################################
 
     @jit
-    def loss_fn(params, Rs, Vs, Fs):
-        pred = v_acceleration_neural_ode(Rs, Vs, params)
-        return MSE(pred, Fs)
     # def loss_fn(params, Rs, Vs, Fs):
     #     pred = v_acceleration_fn_model(Rs, Vs, params)
     #     return MSE(pred, Fs)
-    # def loss_fn(params, Rs, Vs, Rds, Vds):
-    #     pred = v_change_R_V_(Rs, Vs, params)
-    #     return MSE(pred, jnp.concatenate([Rds,Vds], axis=2))
+    def loss_fn(params, Rs, Vs, Rds, Vds):
+        pred = v_change_R_V_(Rs, Vs, params)
+        return MSE(pred, jnp.concatenate([Rds,Vds], axis=2))
 
     def gloss(*args):
         return value_and_grad(loss_fn)(*args)
@@ -433,7 +421,8 @@ def main(N=2, epochs=10000, seed=42, rname=False,
                                    for i in range(nbatches)])]
         return newargs
 
-    bRs, bVs, bFs = batching(Rs, Vs, Fs, size=min(len(Rs), batch_size))
+    bRs, bVs, bRds, bVds = batching(Rs, Vs, Rds, Vds,
+                             size=min(len(Rs), batch_size))
 
     print(f"training ...")
 
@@ -449,9 +438,10 @@ def main(N=2, epochs=10000, seed=42, rname=False,
     for epoch in range(epochs):
         l = 0.0
         count = 0
-        for data in zip(bRs, bVs, bFs):
+        for data in zip(bRs, bVs, bRds, bVds):
             optimizer_step += 1
-            opt_state, params, l_ = step(optimizer_step, (opt_state, params, 0), *data)
+            opt_state, params, l_ = step(
+                optimizer_step, (opt_state, params, 0), *data)
             l += l_
             count+=1
 
@@ -460,12 +450,14 @@ def main(N=2, epochs=10000, seed=42, rname=False,
         l = l/count
         larray += [l]
         if epoch % 1 == 0:
-            ltarray += [loss_fn(params, Rst, Vst, Fst)]
+            ltarray += [loss_fn(params, Rst, Vst, Rdst, Vdst)]
             print(
                 f"Epoch: {epoch}/{epochs} Loss (MSE):  test={ltarray[-1]}, train={larray[-1]}")
         if epoch % 10 == 0:
-            savefile(f"trained_model_{ifdrag}_{trainm}.dil", params, metadata={"savedat": epoch})
-            savefile(f"loss_array_{ifdrag}_{trainm}.dil", (larray, ltarray), metadata={"savedat": epoch})
+            savefile(f"trained_model_{ifdrag}_{trainm}.dil",
+                     params, metadata={"savedat": epoch})
+            savefile(f"loss_array_{ifdrag}_{trainm}.dil",
+                     (larray, ltarray), metadata={"savedat": epoch})
 
             plt.clf()
             fig, axs = plt.subplots(1, 1)
@@ -480,16 +472,16 @@ def main(N=2, epochs=10000, seed=42, rname=False,
         train_time_arr.append((now - start))
 
     params = get_params(opt_state)
-    savefile(f"trained_model_{ifdrag}_{trainm}.dil", params, metadata={"savedat": epoch})
-    savefile(f"loss_array_{ifdrag}_{trainm}.dil",(larray, ltarray), metadata={"savedat": epoch})
+    savefile(f"trained_model_{ifdrag}_{trainm}.dil",
+             params, metadata={"savedat": epoch})
+    savefile(f"loss_array_{ifdrag}_{trainm}.dil",
+             (larray, ltarray), metadata={"savedat": epoch})
 
-    np.savetxt("../training-time/gnode.txt", train_time_arr, delimiter = "\n")
-    np.savetxt("../training-loss/gnode-train.txt", larray, delimiter = "\n")
-    np.savetxt("../training-loss/gnode-test.txt", ltarray, delimiter = "\n")
+    np.savetxt("../training-time/ddgnn.txt", train_time_arr, delimiter = "\n")
+    np.savetxt("../training-loss/ddgnn-train.txt", larray, delimiter = "\n")
+    np.savetxt("../training-loss/ddgnn-test.txt", ltarray, delimiter = "\n")
 
 fire.Fire(main)
-
-
 
 
 

@@ -2,7 +2,7 @@
 ################## IMPORT ######################
 ################################################
 
-from fcntl import F_SEAL_SEAL
+# from fcntl import F_SEAL_SEAL
 import json
 import sys
 import os
@@ -21,6 +21,7 @@ from pyexpat import model
 #from shadow.plot import *
 import matplotlib.pyplot as plt
 #from sklearn.metrics import r2_score
+# from scipy.stats import gmean
 
 from psystems.npendulum import (PEF, edge_order, get_init, hconstraints,
                                 pendulum_connections)
@@ -38,6 +39,7 @@ from src.md import *
 from src.models import MSE, initialize_mlp
 from src.nve import NVEStates, nve
 from src.utils import *
+import time
 
 config.update("jax_enable_x64", True)
 config.update("jax_debug_nans", True)
@@ -53,14 +55,14 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0,  saveovito=0, trainm=1, runs=100, semilog=1, maxtraj=10, plotthings=False, redo=0):
+def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0,  saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0):
 
     print("Configs: ")
     pprint(dt, stride, ifdrag,
            namespace=locals())
 
     PSYS = f"{N}-Pendulum"
-    TAG = f"lgnn"
+    TAG = f"lgnn-l1"
     out_dir = f"../results"
 
     def _filename(name, tag=TAG, trained=None):
@@ -289,7 +291,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
         else:
             return acceleration_fn_model(R, V, params)*mass.reshape(-1, 1)
 
-    params = loadfile(f"trained_model.dil", trained=useN)[0]
+    params = loadfile(f"trained_model_10000.dil", trained=useN)[0]
 
     sim_model = get_forward_sim(
         params=params, force_fn=force_fn_model, runs=runs)
@@ -349,6 +351,8 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
     sim_orig2 = get_forward_sim(
         params=None, force_fn=force_fn_orig, runs=runs)
 
+    t = 0.0
+
     for ind in range(maxtraj):
 
         print(f"Simulating trajectory {ind}/{maxtraj}")
@@ -364,12 +368,15 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
         # V = dataset_states[ind].velocity[0]
 
         actual_traj = sim_orig2(R, V)  # full_traj[start_:stop_]
+        start = time.time()
         pred_traj = sim_model(R, V)
+        end = time.time()
+        t += end - start
 
         if saveovito:
-            save_ovito(f"pred_{ind}.ovito", [
+            save_ovito(f"pred_{ind}.data", [
                 state for state in NVEStates(pred_traj)], lattice="")
-            save_ovito(f"actual_{ind}.ovito", [
+            save_ovito(f"actual_{ind}.data", [
                 state for state in NVEStates(actual_traj)], lattice="")
 
         trajectories += [(actual_traj, pred_traj)]
@@ -505,9 +512,22 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
         plt.savefig(_filename(f"RelError_std_{key}.png"))
 
     make_plots(nexp, "Zerr",
-               yl=r"$\frac{||\hat{z}-z||_2}{||\hat{z}||_2+||z||_2}$")
+               yl=r"$\frac{||z_1-z_2||_2}{||z_1||_2+||z_2||_2}$")
     make_plots(nexp, "Herr",
-               yl=r"$\frac{||H(\hat{z})-H(z)||_2}{||H(\hat{z})||_2+||H(z)||_2}$")
+               yl=r"$\frac{||H(z_1)-H(z_2)||_2}{||H(z_1)||_2+||H(z_2)||_2}$")
 
+    gmean_zerr = jnp.exp( jnp.log(jnp.array(nexp["Zerr"])).mean(axis=0) )
+    gmean_herr = jnp.exp( jnp.log(jnp.array(nexp["Herr"])).mean(axis=0) )
+
+    np.savetxt("../pendulum-zerr/lgnn-l1.txt", gmean_zerr, delimiter = "\n")
+    np.savetxt("../pendulum-herr/lgnn-l1.txt", gmean_herr, delimiter = "\n")
+    np.savetxt("../pendulum-simulation-time/lgnn-l1.txt", [t/maxtraj], delimiter = "\n")
 
 fire.Fire(main)
+
+
+
+
+
+
+
