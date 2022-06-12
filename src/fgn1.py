@@ -41,7 +41,6 @@ def cal(params, graph, mpass=1):
     e_params = params["e_params"]
     n_params = params["n_params"]
     g_params = params["g_params"]
-    #mass_params = params["mass_params"]
 
     def node_em(nodes):
         out = jnp.hstack([v for k, v in nodes.items()])
@@ -62,7 +61,7 @@ def cal(params, graph, mpass=1):
         "NodeEncoder": node_em,
         "GlobalEncoder": None,
     }
-
+    
     def embedding_fn(arg): return embedding[arg]
 
     def edge_fn(edges, sent_attributes, received_attributes, global_):
@@ -97,7 +96,7 @@ def cal(params, graph, mpass=1):
     def final_fn(arg): return final[arg]
 
     net = GraphEncodeNet(mpass, embedding_fn, model_fn, final_fn)
-
+    
     graph = net(graph)
 
     return graph
@@ -115,44 +114,23 @@ def cal_acceleration(params, graph, **kwargs):
         acc_params, graph.nodes["embed"])
     return out
 
-def cal_cacceleration(params, graph, **kwargs):
-    graph = cal(params, graph, **kwargs)
-    acc_params = params["acc_params"]
-    mass_params = params["mass_params"]
-    out = jax.vmap(forward_pass, in_axes=(None, 0))(
-        acc_params, graph.nodes["embed"])
-    
-    mass = jax.vmap(forward_pass, in_axes=(None, 0))(
-        mass_params, graph.nodes["embed"])
-    # mass = [[1], 
-    #         [1],
-    #         [1]]
-    return jnp.hstack([out,mass])
-
-def cal_delta(params, graph, **kwargs):
-    graph = cal(params, graph, **kwargs)
-    delta_params = params["delta_params"]
-    out = jax.vmap(forward_pass, in_axes=(None, 0))(
-        delta_params, graph.nodes["embed"])
+def acceleration_node(R,V, params, **kwargs):
+    inp = jnp.hstack([R.flatten(),V.flatten()])
+    out = jax.vmap(forward_pass, in_axes=(None, 0))(params, inp)
     return out
 
-def cal_deltap(params, graph, **kwargs):
+def cal_l(params, graph, **kwargs):
     graph = cal(params, graph, **kwargs)
-    delta_params = params["deltap_params"]
+    L_params = params["l_params"]
     out = jax.vmap(forward_pass, in_axes=(None, 0))(
-        delta_params, graph.nodes["embed"])
-    return out
-
-def cal_deltav(params, graph, **kwargs):
-    graph = cal(params, graph, **kwargs)
-    delta_params = params["deltav_params"]
-    out = jax.vmap(forward_pass, in_axes=(None, 0))(
-        delta_params, graph.nodes["embed"])
-    return out
-
-def cal_lgn(params, graph, **kwargs):
-    graph = cal(params, graph, **kwargs)
-    delta_params = params["lgn_params"]
-    out = jax.vmap(forward_pass, in_axes=(None, 0))(
-        delta_params, graph.nodes["embed"])
+        L_params, graph.nodes["embed"])
     return out.sum()
+
+
+
+# def cal_zdot(params, graph, **kwargs):
+#     graph = cal(params, graph, **kwargs)
+#     zdot_params = params["zdot_params"]
+#     out = jax.vmap(forward_pass, in_axes=(None, 0))(
+#         zdot_params, graph.nodes["embed"])
+#     return out

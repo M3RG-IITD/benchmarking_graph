@@ -59,7 +59,7 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
            namespace=locals())
 
     PSYS = f"{N}-Pendulum"
-    TAG = f"lgn"
+    TAG = f"clgn"
     out_dir = f"../results"
 
     def _filename(name, tag=TAG, trained=None):
@@ -299,7 +299,7 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
 
     acceleration_fn_model = accelerationFull(N, dim,
                                              lagrangian=Lmodel,
-                                             constraints=None,
+                                             constraints=constraints,
                                              non_conservative_forces=drag)
 
     # def nndrag(v, params):
@@ -550,8 +550,8 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
     gmean_zerr = jnp.exp( jnp.log(jnp.array(nexp["Zerr"])).mean(axis=0) )
     gmean_herr = jnp.exp( jnp.log(jnp.array(nexp["Herr"])).mean(axis=0) )
 
-    np.savetxt(f"../{N}-pendulum-zerr/lgn.txt", gmean_zerr, delimiter = "\n")
-    np.savetxt(f"../{N}-pendulum-herr/lgn.txt", gmean_herr, delimiter = "\n")
-    np.savetxt(f"../{N}-pendulum-simulation-time/lgn.txt", [t/maxtraj], delimiter = "\n")
+    np.savetxt(f"../{N}-pendulum-zerr/clgn.txt", gmean_zerr, delimiter = "\n")
+    np.savetxt(f"../{N}-pendulum-herr/clgn.txt", gmean_herr, delimiter = "\n")
+    np.savetxt(f"../{N}-pendulum-simulation-time/clgn.txt", [t/maxtraj], delimiter = "\n")
 
 fire.Fire(main)

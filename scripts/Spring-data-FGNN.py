@@ -27,6 +27,9 @@ from psystems.nsprings import (chain, edge_order, get_connections,
 MAINPATH = ".."  # nopep8
 sys.path.append(MAINPATH)  # nopep8
 
+from pyexpat import model
+from statistics import mode
+
 import jraph
 import src
 from jax.config import config
@@ -42,8 +45,18 @@ config.update("jax_enable_x64", True)
 config.update("jax_debug_nans", True)
 # jax.config.update('jax_platform_name', 'gpu')
 
+#create a new state for storing data
+class Datastate:
+    def __init__(self, model_states):
+        self.position = model_states.position[:-1]
+        self.velocity = model_states.velocity[:-1]
+        self.force = model_states.force[:-1]
+        self.mass = model_states.mass[:-1]
+        self.index = 0
+        self.change_position = model_states.position[1:]-model_states.position[:-1]
+        self.change_velocity = model_states.velocity[1:]-model_states.velocity[:-1]
 
-def main(N1=5, N2=1, dim=2, grid=False, saveat=100, runs=100, nconfig=100, ifdrag=0):
+def main(N1=5, N2=1, dim=2, grid=False, saveat=100, runs=101, nconfig=100, ifdrag=0):
 
     if N2 is None:
         N2 = N1
@@ -54,7 +67,7 @@ def main(N1=5, N2=1, dim=2, grid=False, saveat=100, runs=100, nconfig=100, ifdra
     seed = 42
     out_dir = f"../results"
     rname = False
-    rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "0_10000"
+    rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "1" #+ str(nconfig * (runs - 1))
     filename_prefix = f"{out_dir}/{tag}/{rstring}/"
 
     def _filename(name):
@@ -180,7 +193,7 @@ def main(N1=5, N2=1, dim=2, grid=False, saveat=100, runs=100, nconfig=100, ifdra
         ind += 1
         print(f"{ind}/{len(init_confs)}", end='\r')
         model_states = forward_sim(R, V)
-        dataset_states += [model_states]
+        dataset_states += [Datastate(model_states)]
         if ind % saveat == 0:
             print(f"{ind} / {len(init_confs)}")
             print("Saving datafile...")
@@ -217,7 +230,6 @@ def main(N1=5, N2=1, dim=2, grid=False, saveat=100, runs=100, nconfig=100, ifdra
 
         if ind >= 10:
             break
-
 
 fire.Fire(main)
 

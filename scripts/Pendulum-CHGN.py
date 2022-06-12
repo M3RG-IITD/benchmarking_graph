@@ -94,11 +94,11 @@ def wrap_main(f):
 
 def Main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
          dt=1.0e-5, ifdrag=0, stride=1000, trainm=1, grid=False, mpass=1, lr=0.001,
-         withdata=None, datapoints=None, batch_size=100, ifDataEfficiency=1):
+         withdata=None, datapoints=None, batch_size=100, ifDataEfficiency = 1):
     
     return wrap_main(main)(N=N, epochs=epochs, seed=seed, rname=rname, saveat=saveat, error_fn=error_fn,
                            dt=dt, ifdrag=ifdrag, stride=stride, trainm=trainm, grid=grid, mpass=mpass, lr=lr,
-                           withdata=withdata, datapoints=datapoints, batch_size=batch_size, ifDataEfficiency = ifDataEfficiency)
+                           withdata=withdata, datapoints=datapoints, batch_size=batch_size, ifDataEfficiency = 1)
 
 
 def main(N=5, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
@@ -117,8 +117,8 @@ def main(N=5, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
         "%m-%d-%Y_%H-%M-%S") + f"_{datapoints}"
 
     PSYS = f"{N}-Pendulum"
-    TAG = f"hgn"
-    
+    TAG = f"chgn"
+   
     if (ifDataEfficiency == 1):
         out_dir = f"../data-efficiency"
     else:
@@ -300,7 +300,7 @@ def main(N=5, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
 
     params["drag"] = initialize_mlp([1, 5, 5, 1], key)
     
-    zdot, lamda_force = get_zdot_lambda(N, dim, hamiltonian=Hmodel, drag=None, constraints=None)
+    zdot, lamda_force = get_zdot_lambda(N, dim, hamiltonian=Hmodel, drag=None, constraints=constraints)
     zdot = jit(zdot)
 
     v_acceleration_fn_model = vmap(zdot, in_axes=(0, 0, None))
@@ -420,13 +420,13 @@ def main(N=5, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
                 "ifdrag": ifdrag,
                 "trainm": trainm,
             }
-            savefile(f"hgn_trained_model_{ifdrag}_{trainm}.dil",
+            savefile(f"chgn_trained_model_{ifdrag}_{trainm}.dil",
                         params, metadata=metadata)
             savefile(f"loss_array_{ifdrag}_{trainm}.dil",
                         (larray, ltarray), metadata=metadata)
             if last_loss > larray[-1]:
                 last_loss = larray[-1]
-                savefile(f"trained_model_low_{ifdrag}_{trainm}.dil",
+                savefile(f"chgn_trained_model_low_{ifdrag}_{trainm}.dil",
                             params, metadata=metadata)
             
             fig, axs = panel(1, 1)
@@ -456,15 +456,15 @@ def main(N=5, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
         "trainm": trainm,
     }
     params = get_params(opt_state)
-    savefile(f"trained_model_{ifdrag}_{trainm}.dil",
+    savefile(f"chgn_trained_model_{ifdrag}_{trainm}.dil",
                 params, metadata=metadata)
     savefile(f"loss_array_{ifdrag}_{trainm}.dil",
                 (larray, ltarray), metadata=metadata)
 
     if (ifDataEfficiency == 0):
-        np.savetxt("../3-pendulum-training-time/hgn.txt", train_time_arr, delimiter = "\n")
-        np.savetxt("../3-pendulum-training-loss/hgn-train.txt", larray, delimiter = "\n")
-        np.savetxt("../3-pendulum-training-loss/hgn-test.txt", ltarray, delimiter = "\n")
+        np.savetxt("../3-pendulum-training-time/chgn.txt", train_time_arr, delimiter = "\n")
+        np.savetxt("../3-pendulum-training-loss/chgn-train.txt", larray, delimiter = "\n")
+        np.savetxt("../3-pendulum-training-loss/chgn-test.txt", ltarray, delimiter = "\n")
 
 
 # fire.Fire(Main)

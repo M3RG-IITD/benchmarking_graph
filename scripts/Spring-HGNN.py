@@ -50,7 +50,11 @@ def pprint(*args, namespace=globals()):
     for arg in args:
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
-def main(N = 5, epochs = 10000, seed = 42, rname = False, saveat = 100, dt = 1.0e-3, stride = 100, ifdrag = 0, trainm = 1, grid = False, mpass = 1, lr = 0.001, withdata = None, datapoints = None, batch_size = 1000):
+def main(N = 5, epochs = 10000, seed = 42, rname = False, saveat = 100, dt = 1.0e-3, stride = 100, ifdrag = 0, trainm = 1, grid = False, mpass = 1, lr = 0.001, withdata = None, datapoints = None, batch_size = 100, ifDataEfficiency = 1):
+    if (ifDataEfficiency == 1):
+        data_points = int(sys.argv[1])
+        batch_size = int(data_points/100)
+    
     print("Configs: ")
     pprint(N, epochs, seed, rname, dt, lr, ifdrag, batch_size, namespace=locals())
 
@@ -58,12 +62,18 @@ def main(N = 5, epochs = 10000, seed = 42, rname = False, saveat = 100, dt = 1.0
 
     PSYS = f"{N}-Spring"
     TAG = f"hgnn"
-    out_dir = f"../results"
+    
+    if (ifDataEfficiency == 1):
+        out_dir = f"../data-efficiency"
+    else:
+        out_dir = f"../results"
 
     def _filename(name, tag=TAG):
         # rstring = randfilename if (rname and (tag != "data")) else (
         #     "0" if (tag == "data") or (withdata == None) else f"0_{withdata}")
         rstring = "2" if (tag == "data") else "0"
+        if (ifDataEfficiency == 1):
+            rstring = "2_" + str(data_points)
         filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
@@ -417,11 +427,13 @@ def main(N = 5, epochs = 10000, seed = 42, rname = False, saveat = 100, dt = 1.0
     savefile(f"loss_array_{ifdrag}_{trainm}.dil",
             (larray, ltarray), metadata={"savedat": epoch})
 
-    np.savetxt("../Spring-training-time/hgnn.txt", train_time_arr, delimiter = "\n")
-    np.savetxt("../Spring-training-loss/hgnn-train.txt", larray, delimiter = "\n")
-    np.savetxt("../Spring-training-loss/hgnn-test.txt", ltarray, delimiter = "\n")
+    if ifDataEfficiency ==0:
+        np.savetxt("../5-spring-training-time/hgnn.txt", train_time_arr, delimiter = "\n")
+        np.savetxt("../5-spring-training-loss/hgnn-train.txt", larray, delimiter = "\n")
+        np.savetxt("../5-spring-training-loss/hgnn-test.txt", ltarray, delimiter = "\n")
 
-fire.Fire(main)
+#fire.Fire(main)
+main()
 
 
 

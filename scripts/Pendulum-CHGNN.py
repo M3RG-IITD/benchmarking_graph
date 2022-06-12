@@ -66,8 +66,8 @@ def pprint(*args, namespace=globals()):
 # batch_size = 1000
 
 def main(N = 3, epochs = 10000, seed = 42, rname = False,
-        dt = 1.0e-5, ifdrag = 0, trainm = 1, stride=1000, lr = 0.001, withdata = None, datapoints = None, batch_size = 100, ifDataEfficiency = 1):    
-    
+        dt = 1.0e-5, ifdrag = 0, trainm = 1, stride=1000, lr = 0.001, withdata = None, datapoints = None, batch_size = 100, ifDataEfficiency = 1): 
+
     if (ifDataEfficiency == 1):
         data_points = int(sys.argv[1])
         batch_size = int(data_points/100)
@@ -78,13 +78,12 @@ def main(N = 3, epochs = 10000, seed = 42, rname = False,
     randfilename = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") + f"_{datapoints}"
 
     PSYS = f"{N}-Pendulum"
-    TAG = f"hgnn"
-   
+    TAG = f"chgnn"
+    
     if (ifDataEfficiency == 1):
         out_dir = f"../data-efficiency"
     else:
         out_dir = f"../results"
-
 
     def _filename(name, tag=TAG):
         # rstring = randfilename if (rname and (tag != "data")) else (
@@ -305,7 +304,7 @@ def main(N = 3, epochs = 10000, seed = 42, rname = False,
         
 
     zdot_model, lamda_force_model = get_zdot_lambda(
-        N, dim, hamiltonian=Hmodel, drag=None, constraints=None,external_force=None)
+        N, dim, hamiltonian=Hmodel, drag=None, constraints=constraints,external_force=None)
 
 
     v_zdot_model = vmap(zdot_model, in_axes=(0, 0, None))
@@ -436,9 +435,9 @@ def main(N = 3, epochs = 10000, seed = 42, rname = False,
             (larray, ltarray), metadata={"savedat": epoch})
 
     if (ifDataEfficiency == 0):
-        np.savetxt("../3-pendulum-training-time/hgnn.txt", train_time_arr, delimiter = "\n")
-        np.savetxt("../3-pendulum-training-loss/hgnn-train.txt", larray, delimiter = "\n")
-        np.savetxt("../3-pendulum-training-loss/hgnn-test.txt", ltarray, delimiter = "\n")
+        np.savetxt("../3-pendulum-training-time/chgnn.txt", train_time_arr, delimiter = "\n")
+        np.savetxt("../3-pendulum-training-loss/chgnn-train.txt", larray, delimiter = "\n")
+        np.savetxt("../3-pendulum-training-loss/chgnn-test.txt", ltarray, delimiter = "\n")
 
 # fire.Fire(main)
 main()

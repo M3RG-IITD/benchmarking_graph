@@ -77,7 +77,7 @@ def wrap_main(f):
 
 def Main(N=5, epochs=10000, seed=42, rname=False, saveat=10, error_fn="L2error",
          dt=1.0e-3, ifdrag=0, stride=100, trainm=1, grid=False, mpass=1, lr=0.001,
-         withdata=None, datapoints=None, batch_size=1000):
+         withdata=None, datapoints=None, batch_size=100):
 
     return wrap_main(main)(N=N, epochs=epochs, seed=seed, rname=rname, saveat=saveat, error_fn=error_fn,
                            dt=dt, ifdrag=ifdrag, stride=stride, trainm=trainm, grid=grid, mpass=mpass, lr=lr,
@@ -85,23 +85,32 @@ def Main(N=5, epochs=10000, seed=42, rname=False, saveat=10, error_fn="L2error",
 
 
 def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
-         dt=1.0e-3, ifdrag=0, stride=100, trainm=1, grid=False, mpass=1, lr=0.001, withdata=None, datapoints=None, batch_size=1000, config=None):
+         dt=1.0e-3, ifdrag=0, stride=100, trainm=1, grid=False, mpass=1, lr=0.001, withdata=None, datapoints=None, batch_size=1000, config=None, ifDataEfficiency = 1):
 
     # print("Configs: ")
     # pprint(N, epochs, seed, rname,
     #        dt, stride, lr, ifdrag, batch_size,
     #        namespace=locals())
 
+    if (ifDataEfficiency == 1):
+        data_points = int(sys.argv[1])
+        batch_size = int(data_points/100)
+    
     randfilename = datetime.now().strftime(
         "%m-%d-%Y_%H-%M-%S") + f"_{datapoints}"
 
     PSYS = f"{N}-Spring"
     TAG = f"hgn"
-    out_dir = f"../results"
+    if (ifDataEfficiency == 1):
+        out_dir = f"../data-efficiency"
+    else:
+        out_dir = f"../results"
 
     def _filename(name, tag=TAG):
         rstring = randfilename if (rname and (tag != "data")) else (
             "2" if (tag == "data") or (withdata == None) else f"{withdata}")
+        if (ifDataEfficiency == 1):
+            rstring = "2_" + str(data_points)
         filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
@@ -477,9 +486,11 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
     savefile(f"loss_array_{ifdrag}_{trainm}.dil",
              (larray, ltarray), metadata=metadata)
 
-    np.savetxt("../Spring-training-time/hgn.txt", train_time_arr, delimiter = "\n")
-    np.savetxt("../Spring-training-loss/hgn-train.txt", larray, delimiter = "\n")
-    np.savetxt("../Spring-training-loss/hgn-test.txt", ltarray, delimiter = "\n")
+    if (ifDataEfficiency == 0):
+        np.savetxt("../5-spring-training-time/hgn.txt", train_time_arr, delimiter = "\n")
+        np.savetxt("../5-spring-training-loss/hgn-train.txt", larray, delimiter = "\n")
+        np.savetxt("../5-spring-training-loss/hgn-test.txt", ltarray, delimiter = "\n")
 
 
-fire.Fire(Main)
+#fire.Fire(Main)
+Main()

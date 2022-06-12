@@ -47,13 +47,13 @@ def ps(*args):
 # runs = 1000
 
 
-def main(N=5, dim=2, nconfig=1000, saveat=100, ifdrag=0, dt=1e-3, stride = 100, runs=100):
+def main(N=5, dim=2, nconfig=100, saveat=100, ifdrag=0, dt=1e-3, stride = 100, runs=100):
 
     tag = f"{N}-Spring-data"
     seed = 42
-    out_dir = f"../data-efficiency"
+    out_dir = f"../results"
     rname = False
-    rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "2"
+    rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "2_" + str(nconfig * runs)
     filename_prefix = f"{out_dir}/{tag}/{rstring}/"
 
     def _filename(name):

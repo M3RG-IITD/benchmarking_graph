@@ -55,15 +55,22 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0,  saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0):
+def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0,  saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 1):
+    if (ifDataEfficiency == 1):
+        data_points = int(sys.argv[1])
+        batch_size = int(data_points/100)
 
     print("Configs: ")
     pprint(dt, stride, ifdrag,
            namespace=locals())
 
     PSYS = f"{N}-Pendulum"
-    TAG = f"lgnn-l1"
-    out_dir = f"../results"
+    TAG = f"lgnn"
+    
+    if (ifDataEfficiency == 1):
+        out_dir = f"../data-efficiency"
+    else:
+        out_dir = f"../results"
 
     def _filename(name, tag=TAG, trained=None):
         if tag == "data":
@@ -77,6 +84,9 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
         name = ".".join(name.split(".")[:-1]) + \
             part + name.split(".")[-1]
         rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "0"
+        if (ifDataEfficiency == 1):
+            rstring = "0_" + str(data_points)
+
         filename_prefix = f"{out_dir}/{psys}-{tag}/{rstring}/"
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
@@ -282,7 +292,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
 
     acceleration_fn_model = accelerationFull(N, dim,
                                              lagrangian=Lmodel,
-                                             constraints=constraints,
+                                             constraints=None,
                                              non_conservative_forces=drag)
 
     def force_fn_model(R, V, params, mass=None):
@@ -291,7 +301,7 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
         else:
             return acceleration_fn_model(R, V, params)*mass.reshape(-1, 1)
 
-    params = loadfile(f"trained_model_10000.dil", trained=useN)[0]
+    params = loadfile(f"trained_model_low.dil", trained=useN)[0]
 
     sim_model = get_forward_sim(
         params=params, force_fn=force_fn_model, runs=runs)
@@ -374,10 +384,11 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
         t += end - start
 
         if saveovito:
-            save_ovito(f"pred_{ind}.data", [
-                state for state in NVEStates(pred_traj)], lattice="")
-            save_ovito(f"actual_{ind}.data", [
-                state for state in NVEStates(actual_traj)], lattice="")
+            if ind < 5:
+                save_ovito(f"pred_{ind}.data", [
+                    state for state in NVEStates(pred_traj)], lattice="")
+                save_ovito(f"actual_{ind}.data", [
+                    state for state in NVEStates(actual_traj)], lattice="")
 
         trajectories += [(actual_traj, pred_traj)]
         savefile("trajectories.pkl", trajectories)
@@ -519,11 +530,13 @@ def main(N=2, dim=2, dt=1.0e-5, useN=2, stride=1000, ifdrag=0, seed=100, rname=0
     gmean_zerr = jnp.exp( jnp.log(jnp.array(nexp["Zerr"])).mean(axis=0) )
     gmean_herr = jnp.exp( jnp.log(jnp.array(nexp["Herr"])).mean(axis=0) )
 
-    np.savetxt("../pendulum-zerr/lgnn-l1.txt", gmean_zerr, delimiter = "\n")
-    np.savetxt("../pendulum-herr/lgnn-l1.txt", gmean_herr, delimiter = "\n")
-    np.savetxt("../pendulum-simulation-time/lgnn-l1.txt", [t/maxtraj], delimiter = "\n")
+    if (ifDataEfficiency == 0):
+        np.savetxt(f"../{N}-pendulum-zerr/lgnn.txt", gmean_zerr, delimiter = "\n")
+        np.savetxt(f"../{N}-pendulum-herr/lgnn.txt", gmean_herr, delimiter = "\n")
+        np.savetxt(f"../{N}-pendulum-simulation-time/lgnn.txt", [t/maxtraj], delimiter = "\n")
 
-fire.Fire(main)
+# fire.Fire(main)
+main()
 
 
 

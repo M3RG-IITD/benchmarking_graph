@@ -22,8 +22,6 @@ from shadow.plot import *
 from psystems.npendulum import (PEF, edge_order, get_init, hconstraints,
                                 pendulum_connections)
 
-import time
-
 MAINPATH = ".."  # nopep8
 sys.path.append(MAINPATH)  # nopep8
 
@@ -32,11 +30,12 @@ import src
 from jax.config import config
 from src import fgn, lnn
 from src.graph import *
-from src.lnn import acceleration, accelerationFull, accelerationTV
+from src.lnn1 import acceleration, accelerationFull, accelerationTV, acceleration_GNODE
 from src.md import *
 from src.models import MSE, initialize_mlp
 from src.nve import NVEStates, nve
 from src.utils import *
+import time
 
 config.update("jax_enable_x64", True)
 config.update("jax_debug_nans", True)
@@ -52,15 +51,23 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0, withdata=None, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0):
+def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0, withdata=None, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 1):
+
+    if (ifDataEfficiency == 1):
+        data_points = int(sys.argv[1])
+        batch_size = int(data_points/100)
 
     print("Configs: ")
     pprint(dt, stride, ifdrag,
            namespace=locals())
 
     PSYS = f"{N}-Pendulum"
-    TAG = f"lgn"
-    out_dir = f"../results"
+    TAG = f"cfgnode"
+    
+    if (ifDataEfficiency == 1):
+        out_dir = f"../data-efficiency"
+    else:
+        out_dir = f"../results"
 
     def _filename(name, tag=TAG, trained=None):
         if tag == "data":
@@ -73,8 +80,13 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
             psys = PSYS
         name = ".".join(name.split(".")[:-1]) + \
             part + name.split(".")[-1]
-        rstring = randfilename if (rname and (tag != "data")) else (
-            "0" if (tag == "data") or (withdata == None) else f"{withdata}")
+        # rstring = randfilename if (rname and (tag != "data")) else (
+        #     "0" if (tag == "data") or (withdata == None) else f"{withdata}")
+        rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "0"
+
+        if (ifDataEfficiency == 1):
+            rstring = "0_" + str(data_points)
+            
         filename_prefix = f"{out_dir}/{psys}-{tag}/{rstring}/"
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
@@ -249,7 +261,7 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
         globals={})
 
     def acceleration_fn(params, graph):
-        acc = fgn.cal_lgn(params, graph, mpass=1)
+        acc = fgn.cal_cacceleration(params, graph, mpass=1)
         return acc
 
     def acc_fn(species):
@@ -278,29 +290,13 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
     apply_fn = acc_fn(species)
     v_apply_fn = vmap(apply_fn, in_axes=(None, 0))
 
-    def Lmodel(x, v, params): return apply_fn(x, v, params["L"])
+    def F_q_qdot(x, v, params): return apply_fn(x, v, params["L"])
 
+    acceleration_fn_model = acceleration_GNODE(N, dim,F_q_qdot,
+                                         constraints=constraints,
+                                         non_conservative_forces=None)
 
-    def nndrag(v, params):
-        return - jnp.abs(models.forward_pass(params, v.reshape(-1), activation_fn=models.SquarePlus)) * v
-
-    if ifdrag == 0:
-        print("Drag: 0.0")
-
-        def drag(x, v, params):
-            return 0.0
-    elif ifdrag == 1:
-        print("Drag: -0.1*v")
-
-        def drag(x, v, params):
-            return vmap(nndrag, in_axes=(0, None))(v.reshape(-1), params["drag"]).reshape(-1, 1)
-
-    
-
-    acceleration_fn_model = accelerationFull(N, dim,
-                                             lagrangian=Lmodel,
-                                             constraints=None,
-                                             non_conservative_forces=drag)
+    #def acceleration_fn_model(x, v, params): return apply_fn(x, v, params["L"])
 
     # def nndrag(v, params):
     #     return - jnp.abs(models.forward_pass(params, v.reshape(-1), activation_fn=models.SquarePlus)) * v
@@ -327,7 +323,7 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
         else:
             return acceleration_fn_model(R, V, params)*mass.reshape(-1, 1)
 
-    params = loadfile(f"trained_model_low.dil", trained=useN)[0]
+    params = loadfile(f"cfgnode_trained_model_low.dil", trained=useN)[0]
 
     sim_model = get_forward_sim(
         params=params, force_fn=force_fn_model, runs=runs)
@@ -407,13 +403,16 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
         start = time.time()
         pred_traj = sim_model(R, V)
         end = time.time()
-        t += end - start
+        t+=end - start
 
         if saveovito:
-            save_ovito(f"pred_{ind}.data", [
-                state for state in NVEStates(pred_traj)], lattice="")
-            save_ovito(f"actual_{ind}.data", [
-                state for state in NVEStates(actual_traj)], lattice="")
+            if ind<5:
+                save_ovito(f"pred_{ind}.data", [
+                    state for state in NVEStates(pred_traj)], lattice="")
+                save_ovito(f"actual_{ind}.data", [
+                    state for state in NVEStates(actual_traj)], lattice="")
+            else:
+                pass
 
         trajectories += [(actual_traj, pred_traj)]
         savefile("trajectories.pkl", trajectories)
@@ -494,9 +493,9 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
         ylabel("Energy", ax=axs[0])
         ylabel("Energy", ax=axs[1])
 
-        title = f"LGN {N}-Pendulum Exp {ind} Lmodel"
+        title = f"CFGNODE-traj {N}-Pendulum Exp {ind} Lmodel"
         axs[1].set_title(title)
-        title = f"LGN {N}-Pendulum Exp {ind} Lactual"
+        title = f"CFGNODE-traj {N}-Pendulum Exp {ind} Lactual"
         axs[0].set_title(title)
 
         plt.savefig(_filename(title.replace(" ", "-")+f".png"))
@@ -543,15 +542,17 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
         plt.savefig(_filename(f"RelError_std_{key}.png"))
 
     make_plots(nexp, "Zerr",
-               yl=r"$\frac{||\hat{z}-z||_2}{||\hat{z}||_2+||z||_2}$")
+               yl=r"$\frac{||z_1-z_2||_2}{||z_1||_2+||z_2||_2}$")
     make_plots(nexp, "Herr",
-               yl=r"$\frac{||H(\hat{z})-H(z)||_2}{||H(\hat{z})||_2+||H(z)||_2}$")
+               yl=r"$\frac{||H(z_1)-H(z_2)||_2}{||H(z_1)||_2+||H(z_2)||_2}$")
 
     gmean_zerr = jnp.exp( jnp.log(jnp.array(nexp["Zerr"])).mean(axis=0) )
     gmean_herr = jnp.exp( jnp.log(jnp.array(nexp["Herr"])).mean(axis=0) )
 
-    np.savetxt(f"../{N}-pendulum-zerr/lgn.txt", gmean_zerr, delimiter = "\n")
-    np.savetxt(f"../{N}-pendulum-herr/lgn.txt", gmean_herr, delimiter = "\n")
-    np.savetxt(f"../{N}-pendulum-simulation-time/lgn.txt", [t/maxtraj], delimiter = "\n")
+    if (ifDataEfficiency == 0):
+        np.savetxt(f"../{N}-pendulum-zerr/cfgnode.txt", gmean_zerr, delimiter = "\n")
+        np.savetxt(f"../{N}-pendulum-herr/cfgnode.txt", gmean_herr, delimiter = "\n")
+        np.savetxt(f"../{N}-pendulum-simulation-time/cfgnode.txt", [t/maxtraj], delimiter = "\n")
 
-fire.Fire(main)
+# fire.Fire(main)
+main()

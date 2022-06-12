@@ -16,9 +16,9 @@ import numpy as np
 from jax import jit, random, value_and_grad, vmap
 from jax.experimental import optimizers
 from jax_md import space
-#from shadow.plot import *
+from shadow.plot import *
 #from sklearn.metrics import r2_score
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 #from torch import batch_norm_gather_stats_with_counts
 
 from psystems.npendulum import (PEF, edge_order, get_init, hconstraints,
@@ -54,8 +54,13 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=2, epochs=10000, seed=42, rname=False,
-         dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001, datapoints=None, batch_size=1000):
+def main(N=3, epochs=10000, seed=42, rname=False,
+         dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001, datapoints=None, batch_size=100, ifDataEfficiency = 1):
+
+    if (ifDataEfficiency == 1):
+        data_points = int(sys.argv[1])
+        batch_size = int(data_points/100)
+
 
     print("Configs: ")
     pprint(N, epochs, seed, rname,
@@ -64,10 +69,18 @@ def main(N=2, epochs=10000, seed=42, rname=False,
 
     PSYS = f"{N}-Pendulum"
     TAG = f"lgnn"
-    out_dir = f"../results"
+
+    if (ifDataEfficiency == 1):
+        out_dir = f"../data-efficiency"
+    else:
+        out_dir = f"../results"
 
     def _filename(name, tag=TAG):
         rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "0"
+
+        if (ifDataEfficiency == 1):
+            rstring = "0_" + str(data_points)
+
         filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
@@ -299,7 +312,7 @@ def main(N=2, epochs=10000, seed=42, rname=False,
 
     acceleration_fn_model = accelerationFull(N, dim,
                                              lagrangian=Lmodel,
-                                             constraints=constraints,
+                                             constraints=None,
                                              non_conservative_forces=drag)
     v_acceleration_fn_model = vmap(acceleration_fn_model, in_axes=(0, 0, None))
 
@@ -370,6 +383,8 @@ def main(N=2, epochs=10000, seed=42, rname=False,
     start = time.time()
     train_time_arr = []
 
+    last_loss= 1000
+
     for epoch in range(epochs):
         l = 0.0
         count = 0
@@ -394,10 +409,15 @@ def main(N=2, epochs=10000, seed=42, rname=False,
             savefile(f"loss_array_{ifdrag}_{trainm}.dil",
                      (larray, ltarray), metadata={"savedat": epoch})
 
+            if last_loss > larray[-1]:
+                last_loss = larray[-1]
+                savefile(f"trained_model_{ifdrag}_{trainm}_low.dil",
+                         params, metadata={"savedat": epoch})
+
         now = time.time()
         train_time_arr.append((now - start))
 
-    fig, axs = plt.subplots(1, 1)
+    fig, axs = panel(1, 1)
     plt.semilogy(larray, label="Training")
     plt.semilogy(ltarray, label="Test")
     plt.xlabel("Epoch")
@@ -411,11 +431,13 @@ def main(N=2, epochs=10000, seed=42, rname=False,
     savefile(f"loss_array_{ifdrag}_{trainm}.dil",
              (larray, ltarray), metadata={"savedat": epoch})
 
-    np.savetxt("../training-time/lgnn.txt", train_time_arr, delimiter = "\n")
-    np.savetxt("../training-loss/lgnn-train.txt", larray, delimiter = "\n")
-    np.savetxt("../training-loss/lgnn-test.txt", ltarray, delimiter = "\n")
+    if (ifDataEfficiency == 0):
+        np.savetxt("../3-pendulum-training-time/lgnn.txt", train_time_arr, delimiter = "\n")
+        np.savetxt("../3-pendulum-training-loss/lgnn-train.txt", larray, delimiter = "\n")
+        np.savetxt("../3-pendulum-training-loss/lgnn-test.txt", ltarray, delimiter = "\n")
 
-fire.Fire(main)
+# fire.Fire(main)
+main()
 
 
 

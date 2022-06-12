@@ -35,18 +35,18 @@ from src.models import MSE, initialize_mlp
 from src.nve import nve
 from src.utils import *
 
+import time
+
 config.update("jax_enable_x64", True)
 config.update("jax_debug_nans", True)
 # jax.config.update('jax_platform_name', 'gpu')
 
-
-def main(N=2, dim=2, saveat=100, nconfig=1000, ifdrag=0, runs=100):
-
+def main(N=3, dim=2, saveat=100, nconfig=100, ifdrag=0, runs=100):
     tag = f"{N}-Pendulum-data"
     seed = 42
-    out_dir = f"../data-efficiency"
+    out_dir = f"../results"
     rname = False
-    rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "0"
+    rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "0_10000"
     filename_prefix = f"{out_dir}/{tag}/{rstring}/"
 
     def _filename(name):
@@ -150,10 +150,14 @@ def main(N=2, dim=2, saveat=100, nconfig=1000, ifdrag=0, runs=100):
     print("Data generation ...")
     ind = 0
     dataset_states = []
+    t = 0.0
     for R, V in init_confs:
         ind += 1
         print(f"{ind}/{len(init_confs)}", end='\r')
+        start = time.time()
         model_states = forward_sim(R, V)
+        end = time.time()
+        t += end - start
         dataset_states += [model_states]
         if ind % saveat == 0:
             print(f"{ind} / {len(init_confs)}")
@@ -188,6 +192,7 @@ def main(N=2, dim=2, saveat=100, nconfig=1000, ifdrag=0, runs=100):
             _filename(title.replace(" ", "_")+".png"), dpi=300)
         if ind >= 10:
             break
-
+    
+    np.savetxt("../3-pendulum-simulation-time/simulation.txt", [t/nconfig], delimiter = "\n")
 
 fire.Fire(main)

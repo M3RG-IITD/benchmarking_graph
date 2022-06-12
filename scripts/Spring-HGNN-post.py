@@ -48,13 +48,21 @@ def pprint(*args, namespace=globals()):
     for arg in args:
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
-def main(N=3, dim=2, dt=1.0e-3, stride=100, useN=5, withdata=None, datapoints=100, grid=False, ifdrag=0, seed=42, rname=0, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0):
+def main(N=5, dim=2, dt=1.0e-3, stride=100, useN=5, withdata=None, datapoints=100, grid=False, ifdrag=0, seed=42, rname=0, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 1):
+    if (ifDataEfficiency == 1):
+        data_points = int(sys.argv[1])
+        batch_size = int(data_points/100)
+
     print("Configs: ")
     pprint(dt, ifdrag, namespace=locals())
 
     PSYS = f"{N}-Spring"
     TAG = f"hgnn"
-    out_dir = f"../results"
+    
+    if (ifDataEfficiency == 1):
+        out_dir = f"../data-efficiency"
+    else:
+        out_dir = f"../results"
 
     randfilename = datetime.now().strftime(
         "%m-%d-%Y_%H-%M-%S") + f"_{datapoints}"
@@ -73,6 +81,9 @@ def main(N=3, dim=2, dt=1.0e-3, stride=100, useN=5, withdata=None, datapoints=10
         # rstring = randfilename if (rname and (tag != "data")) else (
         #     "0" if (tag == "data") or (withdata == None) else f"0_{withdata}")
         rstring  = "0" if (tag != "data" ) else "2"
+        if (ifDataEfficiency == 1):
+            rstring = "2_" + str(data_points)
+
         filename_prefix = f"{out_dir}/{psys}-{tag}/{rstring}/"
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
@@ -481,8 +492,9 @@ def main(N=3, dim=2, dt=1.0e-3, stride=100, useN=5, withdata=None, datapoints=10
         nexp["z_actual"] += [actual_traj.position]
         nexp["Zerr"] += [RelErr(actual_traj.position,
                                 pred_traj.position)+1e-30]
-        nexp["Perr"] += [RelErr(actual_traj.velocity,
-                                pred_traj.velocity)+1e-30]
+        ac_mom = jnp.square(actual_traj.velocity.sum(1)).sum(1)
+        pr_mom = jnp.square(pred_traj.velocity.sum(1)).sum(1)
+        nexp["Perr"] += [jnp.absolute(ac_mom - pr_mom)+1e-30]
         
         if ind%10==0:
             savefile("trajectories.pkl", trajectories)
@@ -540,10 +552,12 @@ def main(N=3, dim=2, dt=1.0e-3, stride=100, useN=5, withdata=None, datapoints=10
     gmean_herr = jnp.exp( jnp.log(jnp.array(nexp["Herr"])).mean(axis=0) )
     gmean_perr = jnp.exp( jnp.log(jnp.array(nexp["Perr"])).mean(axis=0) )
 
-    np.savetxt("../spring-generalizibility/3-hgnn.txt", gmean_zerr, delimiter = "\n")
-    # np.savetxt("../spring-herr/hgnn.txt", gmean_herr, delimiter = "\n")
-    # np.savetxt("../spring-perr/hgnn.txt", gmean_perr, delimiter = "\n")
-    # np.savetxt("../spring-simulation-time/hgnn.txt", [t/maxtraj], delimiter = "\n")
+    if (ifDataEfficiency == 0):
+        np.savetxt(f"../{N}-spring-zerr/hgnn.txt", gmean_zerr, delimiter = "\n")
+        np.savetxt(f"../{N}-spring-herr/hgnn.txt", gmean_herr, delimiter = "\n")
+        np.savetxt(f"../{N}-spring-perr/hgnn.txt", gmean_perr, delimiter = "\n")
+        np.savetxt(f"../{N}-spring-simulation-time/hgnn.txt", [t/maxtraj], delimiter = "\n")
 
 
-fire.Fire(main)
+# fire.Fire(main)
+main()

@@ -56,8 +56,12 @@ def pprint(*args, namespace=globals()):
 
 
 def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
-         dt=1.0e-3, ifdrag=0, stride=100, trainm=1, grid=False, mpass=1, lr=0.001, withdata=None, datapoints=None, batch_size=1000):
+         dt=1.0e-3, ifdrag=0, stride=100, trainm=1, grid=False, mpass=1, lr=0.001, withdata=None, datapoints=None, batch_size=100,  ifDataEfficiency = 1):
 
+    if (ifDataEfficiency == 1):
+        data_points = int(sys.argv[1])
+        batch_size = int(data_points/100)
+    
     print("Configs: ")
     pprint(N, epochs, seed, rname,
            dt, stride, lr, ifdrag, batch_size,
@@ -68,11 +72,17 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
 
     PSYS = f"{N}-Spring"
     TAG = f"lgnn"
-    out_dir = f"../results"
+    
+    if (ifDataEfficiency == 1):
+        out_dir = f"../data-efficiency"
+    else:
+        out_dir = f"../results"
 
     def _filename(name, tag=TAG):
         rstring = randfilename if (rname and (tag != "data")) else (
             "0" if (tag == "data") or (withdata == None) else f"0_{withdata}")
+        if (ifDataEfficiency == 1):
+            rstring = "0_" + str(data_points)
         filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
@@ -415,6 +425,7 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
                      params, metadata=metadata)
             savefile(f"loss_array_{ifdrag}_{trainm}.dil",
                      (larray, ltarray), metadata=metadata)
+
             if last_loss > larray[-1]:
                 last_loss = larray[-1]
                 savefile(f"trained_model_{ifdrag}_{trainm}_low.dil",
@@ -444,8 +455,13 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
     savefile(f"loss_array_{ifdrag}_{trainm}.dil",
             (larray, ltarray), metadata=metadata)
 
-    np.savetxt("../Spring-training-time/lgnn.txt", train_time_arr, delimiter = "\n")
-    np.savetxt("../Spring-training-loss/lgnn-train.txt", larray, delimiter = "\n")
-    np.savetxt("../Spring-training-loss/lgnn-test.txt", ltarray, delimiter = "\n")
+    if (ifDataEfficiency == 0):
+        np.savetxt(f"../5-spring-training-time/lgnn.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../5-spring-training-loss/lgnn-train.txt", larray, delimiter = "\n")
+        np.savetxt(f"../5-spring-training-loss/lgnn-test.txt", ltarray, delimiter = "\n")
 
-fire.Fire(main)
+# fire.Fire(main)
+main()
+
+
+

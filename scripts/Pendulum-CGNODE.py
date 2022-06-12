@@ -69,20 +69,20 @@ ifDataEfficiency = 1
 # def main(N=2, epochs=10000, seed=42, rname=True,
 #          dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001, withdata=None, datapoints=None, batch_size=1000):
 
+if (ifDataEfficiency == 1):
+    data_points = int(sys.argv[1])
+    batch_size = int(data_points/100)
+
 print("Configs: ")
 pprint(N, epochs, seed, rname,
-        dt, stride, lr, ifdrag, batch_size, ifDataEfficiency,
+        dt, stride, lr, ifdrag, batch_size,
         namespace=locals())
 
 randfilename = datetime.now().strftime(
     "%m-%d-%Y_%H-%M-%S") + f"_{datapoints}"
 
-if (ifDataEfficiency == 1):
-    data_points = int(sys.argv[1])
-    batch_size = int(data_points/100)
-
 PSYS = f"{N}-Pendulum"
-TAG = f"gnode"
+TAG = f"cgnode"
 
 if (ifDataEfficiency == 1):
     out_dir = f"../data-efficiency"
@@ -315,7 +315,7 @@ def F_q_qdot(x, v, params): return apply_fn(x, v, params["Fqqdot"])
 # params["drag"] = initialize_mlp([1, 5, 5, 1], key)
 # acceleration_fn_model = qddot
 acceleration_fn_model = acceleration_GNODE(N, dim,F_q_qdot,
-                                         constraints=None,
+                                         constraints=constraints,
                                          non_conservative_forces=None)
 
 v_acceleration_fn_model = vmap(acceleration_fn_model, in_axes=(0, 0, None))
@@ -420,13 +420,13 @@ for epoch in range(epochs):
                 "ifdrag": ifdrag,
                 "trainm": trainm,
             }
-        savefile(f"gnode_trained_model_{ifdrag}_{trainm}.dil",
+        savefile(f"cgnode_trained_model_{ifdrag}_{trainm}.dil",
                     params, metadata=metadata)
         savefile(f"loss_array_{ifdrag}_{trainm}.dil",
                     (larray, ltarray), metadata=metadata)
         if last_loss > larray[-1]:
             last_loss = larray[-1]
-            savefile(f"gnode_trained_model_low_{ifdrag}_{trainm}.dil",
+            savefile(f"cgnode_trained_model_low_{ifdrag}_{trainm}.dil",
                         params, metadata=metadata)
     
         plt.clf()
@@ -451,21 +451,19 @@ plt.legend()
 plt.savefig(_filename(f"training_loss_{ifdrag}_{trainm}.png"))
 
 params = get_params(opt_state)
-savefile(f"gnode_trained_model_{ifdrag}_{trainm}.dil",
+savefile(f"cgnode_trained_model_{ifdrag}_{trainm}.dil",
             params, metadata=metadata)
 savefile(f"loss_array_{ifdrag}_{trainm}.dil",
             (larray, ltarray), metadata=metadata)
 if last_loss > larray[-1]:
     last_loss = larray[-1]
-    savefile(f"gnode_trained_model_{ifdrag}_{trainm}_low.dil",
+    savefile(f"cgnode_trained_model_{ifdrag}_{trainm}_low.dil",
                 params, metadata=metadata)
 
 if (ifDataEfficiency == 0):
-    np.savetxt("../3-pendulum-training-time/gnode.txt", train_time_arr, delimiter = "\n")
-    np.savetxt("../3-pendulum-training-loss/gnode-train.txt", larray, delimiter = "\n")
-    np.savetxt("../3-pendulum-training-loss/gnode-test.txt", ltarray, delimiter = "\n")
-
-# main()
+    np.savetxt("../3-pendulum-training-time/cgnode.txt", train_time_arr, delimiter = "\n")
+    np.savetxt("../3-pendulum-training-loss/cgnode-train.txt", larray, delimiter = "\n")
+    np.savetxt("../3-pendulum-training-loss/cgnode-test.txt", ltarray, delimiter = "\n")
 
 # fire.Fire(main)
 

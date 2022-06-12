@@ -52,7 +52,10 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=7, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=False, stride=100, ifdrag=0, seed=42, rname=0, saveovito=0, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0):
+def main(N=5, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=False, stride=100, ifdrag=0, seed=42, rname=0, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 1):
+    if (ifDataEfficiency == 1):
+        data_points = int(sys.argv[1])
+        batch_size = int(data_points/100)
 
     if useN is None:
         useN = N
@@ -63,7 +66,11 @@ def main(N=7, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
 
     PSYS = f"{N}-Spring"
     TAG = f"hgn"
-    out_dir = f"../results"
+    
+    if (ifDataEfficiency == 1):
+        out_dir = f"../data-efficiency"
+    else:
+        out_dir = f"../results"
 
     randfilename = datetime.now().strftime(
         "%m-%d-%Y_%H-%M-%S") + f"_{datapoints}"
@@ -81,7 +88,10 @@ def main(N=7, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
             part + name.split(".")[-1]
         # rstring = randfilename if (rname and (tag != "data")) else (
         #     "0" if (tag == "data") or (withdata == None) else f"{withdata}")
-        rstring  =  "2"
+        rstring  = "0" if (tag != "data" ) else "2"
+        if (ifDataEfficiency == 1):
+            rstring = "2_" + str(data_points)
+
         filename_prefix = f"{out_dir}/{psys}-{tag}/{rstring}/"
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
@@ -442,9 +452,9 @@ def main(N=7, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
             t += end - start
 
             if saveovito:
-                save_ovito(f"pred_{ind}.ovito", [
+                save_ovito(f"pred_{ind}.data", [
                     state for state in NVEStates(pred_traj)], lattice="")
-                save_ovito(f"actual_{ind}.ovito", [
+                save_ovito(f"actual_{ind}.data", [
                     state for state in NVEStates(actual_traj)], lattice="")
 
             trajectories += [(actual_traj, pred_traj)]
@@ -520,8 +530,11 @@ def main(N=7, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
             nexp["z_actual"] += [actual_traj.position]
             nexp["Zerr"] += [RelErr(actual_traj.position,
                                     pred_traj.position)+1e-30]
-            nexp["Perr"] += [RelErr(actual_traj.velocity,
-                                    pred_traj.velocity)+1e-30]
+            ac_mom = jnp.square(actual_traj.velocity.sum(1)).sum(1)
+            pr_mom = jnp.square(pred_traj.velocity.sum(1)).sum(1)
+            nexp["Perr"] += [jnp.absolute(ac_mom - pr_mom)]
+            
+            savefile(f"error_parameter.pkl", nexp)
 
             fig, axs = panel(1, 2, figsize=(20, 5))
             axs[0].plot(Es, label=["PE", "KE", "L", "TE"], lw=6, alpha=0.5)
@@ -591,10 +604,12 @@ def main(N=7, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
     gmean_herr = jnp.exp( jnp.log(jnp.array(nexp["Herr"])).mean(axis=0) )
     gmean_perr = jnp.exp( jnp.log(jnp.array(nexp["Perr"])).mean(axis=0) )
 
-    np.savetxt("../spring-generalizibility/7-hgn.txt", gmean_zerr, delimiter = "\n")
-    # np.savetxt("../spring-herr/hgn.txt", gmean_herr, delimiter = "\n")
-    # np.savetxt("../spring-perr/hgn.txt", gmean_perr, delimiter = "\n")
-    # np.savetxt("../spring-simulation-time/hgn.txt", [t/maxtraj], delimiter = "\n")
+    if (ifDataEfficiency == 0):
+        np.savetxt(f"../{N}-spring-zerr/hgn.txt", gmean_zerr, delimiter = "\n")
+        np.savetxt(f"../{N}-spring-herr/hgn.txt", gmean_herr, delimiter = "\n")
+        np.savetxt(f"../{N}-spring-perr/hgn.txt", gmean_perr, delimiter = "\n")
+        np.savetxt(f"../{N}-spring-simulation-time/hgn.txt", [t/maxtraj], delimiter = "\n")
 
 
-fire.Fire(main)
+# fire.Fire(main)
+main()

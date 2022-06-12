@@ -69,16 +69,16 @@ def wrap_main(f):
     return fn
 
 
-def Main(N=2, epochs=50000, seed=42, rname=False, error_fn="L2error", mpass=1, saveat=10,
-         dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001, datapoints=None, batch_size=1000):
+def Main(N=3, epochs=10000, seed=42, rname=False, error_fn="L2error", mpass=1, saveat=10,
+         dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001, datapoints=None, batch_size=100):
 
     return wrap_main(main)(N=N, epochs=epochs, seed=seed, rname=rname, error_fn=error_fn, mpass=mpass,
                            dt=dt, ifdrag=ifdrag, trainm=trainm, stride=stride, lr=lr, datapoints=datapoints,
                            batch_size=batch_size, saveat=saveat)
 
 
-def main(N=2, epochs=10000, seed=42, rname=False,  error_fn="L2error", mpass=1, saveat=10,
-         dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001,  withdata=None, datapoints=None, batch_size=1000, config=None):
+def main(N=3, epochs=1, seed=42, rname=False,  error_fn="L2error", mpass=1, saveat=10,
+         dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001,  withdata=None, datapoints=None, batch_size=100, config=None):
 
     # print("Configs: ")
     # pprint(N, epochs, seed, rname,
@@ -318,7 +318,7 @@ def main(N=2, epochs=10000, seed=42, rname=False,  error_fn="L2error", mpass=1, 
 
     acceleration_fn_model = accelerationFull(N, dim,
                                              lagrangian=Lmodel,
-                                             constraints=constraints,
+                                             constraints=None,
                                              non_conservative_forces=drag)
 
     print(acceleration_fn_model(R, V, params))
@@ -392,7 +392,7 @@ def main(N=2, epochs=10000, seed=42, rname=False,  error_fn="L2error", mpass=1, 
     optimizer_step = -1
     larray = []
     ltarray = []
-    last_loss = 1000
+    last_loss = 1000000
 
     larray += [loss_fn(params, Rs, Vs, Fs)]
     ltarray += [loss_fn(params, Rst, Vst, Fst)]
@@ -452,9 +452,9 @@ def main(N=2, epochs=10000, seed=42, rname=False,  error_fn="L2error", mpass=1, 
             plt.legend()
             plt.savefig(_filename(f"training_loss_{ifdrag}_{trainm}.png"))
 
-            np.savetxt("../training-time/lgn.txt", train_time_arr, delimiter = "\n")
-            np.savetxt("../training-loss/lgn-train.txt", larray, delimiter = "\n")
-            np.savetxt("../training-loss/lgn-test.txt", ltarray, delimiter = "\n")
+            np.savetxt("../3-pendulum-training-time/lgn.txt", train_time_arr, delimiter = "\n")
+            np.savetxt("../3-pendulum-training-loss/lgn-train.txt", larray, delimiter = "\n")
+            np.savetxt("../3-pendulum-training-loss/lgn-test.txt", ltarray, delimiter = "\n")
 
     metadata = {
         "savedat": epoch,

@@ -49,6 +49,16 @@ from src.utils import *
 # config.update("jax_debug_nans", True)
 # jax.config.update('jax_platform_name', 'gpu')
 
+class Datastate:
+    def __init__(self, model_states):
+        self.position = model_states.position[:-1]
+        self.velocity = model_states.velocity[:-1]
+        self.force = model_states.force[:-1]
+        self.mass = model_states.mass[:-1]
+        self.index = 0
+        self.change_position = model_states.position[1:]-model_states.position[:-1]
+        self.change_velocity = model_states.velocity[1:]-model_states.velocity[:-1]
+
 
 def namestr(obj, namespace):
     return [name for name in namespace if namespace[name] is obj]
@@ -95,12 +105,13 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
         "%m-%d-%Y_%H-%M-%S") + f"_{datapoints}"
 
     PSYS = f"{N}-Spring"
-    TAG = f"lgn"
+    TAG = f"fgnn"
     out_dir = f"../results"
 
     def _filename(name, tag=TAG):
-        rstring = randfilename if (rname and (tag != "data")) else (
-            "0" if (tag == "data") or (withdata == None) else f"{withdata}")
+        # rstring = randfilename if (rname and (tag != "data")) else (
+        #     "1" if (tag == "data") or (withdata == None) else f"{withdata}")
+        rstring = "1" if (tag == "data") else "0"
         filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
@@ -148,19 +159,47 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
     print(
         f"Total number of data points: {len(dataset_states)}x{model_states.position.shape[0]}")
 
+    # if len(dataset_states)*model_states.position.shape[0] != 10000:
+    #     raise Exception("Invalid number of data points")
+
     N, dim = model_states.position.shape[-2:]
     species = jnp.zeros((N, 1), dtype=int)
     masses = jnp.ones((N, 1))
 
-    Rs, Vs, Fs = States().fromlist(dataset_states).get_array()
+    # Rs, Vs, Fs = States().fromlist(dataset_states).get_array()
+    # Rs = Rs.reshape(-1, N, dim)
+    # Vs = Vs.reshape(-1, N, dim)
+    # Fs = Fs.reshape(-1, N, dim)
+
+    Rs, Vs, Fs, Rds, Vds = States_modified().fromlist(dataset_states).get_array()
     Rs = Rs.reshape(-1, N, dim)
     Vs = Vs.reshape(-1, N, dim)
     Fs = Fs.reshape(-1, N, dim)
+    Rds = Rds.reshape(-1, N, dim)
+    Vds = Vds.reshape(-1, N, dim)
+
+    # mask = np.random.choice(len(Rs), len(Rs), replace=False)
+    # allRs = Rs[mask]
+    # allVs = Vs[mask]
+    # allFs = Fs[mask]
 
     mask = np.random.choice(len(Rs), len(Rs), replace=False)
     allRs = Rs[mask]
     allVs = Vs[mask]
     allFs = Fs[mask]
+    allRds = Rds[mask]
+    allVds = Vds[mask]
+
+    # Ntr = int(0.75*len(Rs))
+    # Nts = len(Rs) - Ntr
+
+    # Rs = allRs[:Ntr]
+    # Vs = allVs[:Ntr]
+    # Fs = allFs[:Ntr]
+
+    # Rst = allRs[Ntr:]
+    # Vst = allVs[Ntr:]
+    # Fst = allFs[Ntr:]
 
     Ntr = int(0.75*len(Rs))
     Nts = len(Rs) - Ntr
@@ -168,10 +207,14 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
     Rs = allRs[:Ntr]
     Vs = allVs[:Ntr]
     Fs = allFs[:Ntr]
+    Rds = allRds[:Ntr]
+    Vds = allVds[:Ntr]
 
     Rst = allRs[Ntr:]
     Vst = allVs[Ntr:]
     Fst = allFs[Ntr:]
+    Rdst = allRds[Ntr:]
+    Vdst = allVds[Ntr:]
 
     ################################################
     ################## SYSTEM ######################
@@ -277,11 +320,11 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
         n_params=initialize_mlp([2*ee+ne, *hidden_dim, ne], key),
         g_params=initialize_mlp([ne, *hidden_dim, 1], key),
         acc_params=initialize_mlp([ne, *hidden_dim, dim], key),
-        lgn_params = initialize_mlp([ne, *hidden_dim, 1], key),
+        delta_params = initialize_mlp([ne, *hidden_dim, dim*2], key),
     )
 
     def acceleration_fn(params, graph):
-        acc = fgn.cal_lgn(params, graph, mpass=1)
+        acc = fgn.cal_delta(params, graph, mpass=1)
         return acc
 
     def acc_fn(species):
@@ -308,34 +351,34 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
     apply_fn = acc_fn(species)
     v_apply_fn = vmap(apply_fn, in_axes=(None, 0))
 
-    def Lmodel(x, v, params): return apply_fn(x, v, params["L"])
+    def acceleration_fn_model(x, v, params): return apply_fn(x, v, params["L"])
 
     params = {"L": Lparams}
 
-    #print(acceleration_fn_model(R, V, params))
+    print(acceleration_fn_model(R, V, params))
 
     # print("lag: ", Lmodel(R, V, params))
 
-    def nndrag(v, params):
-        return - jnp.abs(models.forward_pass(params, v.reshape(-1), activation_fn=models.SquarePlus)) * v
+    # def nndrag(v, params):
+    #     return - jnp.abs(models.forward_pass(params, v.reshape(-1), activation_fn=models.SquarePlus)) * v
 
-    if ifdrag == 0:
-        print("Drag: 0.0")
+    # if ifdrag == 0:
+    #     print("Drag: 0.0")
 
-        def drag(x, v, params):
-            return 0.0
-    elif ifdrag == 1:
-        print("Drag: nn")
+    #     def drag(x, v, params):
+    #         return 0.0
+    # elif ifdrag == 1:
+    #     print("Drag: nn")
 
-        def drag(x, v, params):
-            return vmap(nndrag, in_axes=(0, None))(v.reshape(-1), params["drag"]).reshape(-1, 1)
+    #     def drag(x, v, params):
+    #         return vmap(nndrag, in_axes=(0, None))(v.reshape(-1), params["drag"]).reshape(-1, 1)
 
-    params["drag"] = initialize_mlp([1, 5, 5, 1], key)
+    # params["drag"] = initialize_mlp([1, 5, 5, 1], key)
 
-    acceleration_fn_model = accelerationFull(N, dim,
-                                                 lagrangian=Lmodel,
-                                                 constraints=None,
-                                                 non_conservative_forces=drag)
+    # acceleration_fn_model = jit(accelerationFull(N, dim,
+    #                                              lagrangian=Lmodel,
+    #                                              constraints=None,
+    #                                              non_conservative_forces=drag))
 
     v_acceleration_fn_model = vmap(acceleration_fn_model, in_axes=(0, 0, None))
 
@@ -346,9 +389,9 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
     #LOSS = getattr(src.models, error_fn)
 
     @jit
-    def loss_fn(params, Rs, Vs, Fs):
+    def loss_fn(params, Rs, Vs, Rds, Vds):
         pred = v_acceleration_fn_model(Rs, Vs, params)
-        return MSE(pred, Fs)
+        return MSE(pred, jnp.concatenate([Rds,Vds], axis=2))
 
     @jit
     def gloss(*args):
@@ -397,7 +440,7 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
                                    for i in range(nbatches)])]
         return newargs
 
-    bRs, bVs, bFs = batching(Rs, Vs, Fs,
+    bRs, bVs, bRds, bVds = batching(Rs, Vs, Rds, Vds,
                              size=min(len(Rs), batch_size))
 
     print(f"training ...")
@@ -412,8 +455,8 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
     start = time.time()
     train_time_arr = []
 
-    larray += [loss_fn(params, Rs, Vs, Fs)]
-    ltarray += [loss_fn(params, Rst, Vst, Fst)]
+    larray += [loss_fn(params, Rs, Vs, Rds, Vds)]
+    ltarray += [loss_fn(params, Rst, Vst, Rdst, Vdst)]
 
     def print_loss():
         print(
@@ -424,25 +467,23 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
     for epoch in range(epochs):
         l = 0.0
         count = 0
-        for data in zip(bRs, bVs, bFs):
+        for data in zip(bRs, bVs, bRds, bVds):
             optimizer_step += 1
             opt_state, params, l_ = step(
                 optimizer_step, (opt_state, params, 0), *data)
 
             l += l_
             count += 1
+
         # optimizer_step += 1
         # opt_state, params, l_ = step(
         #     optimizer_step, (opt_state, params, 0), Rs, Vs, Fs)
         l = l/count
         if epoch % 1 == 0:
             larray += [l]
-            ltarray += [loss_fn(params, Rst, Vst, Fst)]
+            ltarray += [loss_fn(params, Rst, Vst, Rdst, Vdst)]
             print_loss()
 
-        now = time.time()
-        train_time_arr.append((now - start))
-        
         if epoch % saveat == 0:
             metadata = {
                 "savedat": epoch,
@@ -460,21 +501,9 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
                 savefile(f"trained_model_low_{ifdrag}_{trainm}.dil",
                          params, metadata=metadata)
 
-            plt.clf()
-            fig, axs = panel(1, 1)
-            plt.semilogy(larray[1:], label="Training")
-            plt.semilogy(ltarray[1:], label="Test")
-            plt.xlabel("Epoch")
-            plt.ylabel("Loss")
-            plt.legend()
-            plt.savefig(_filename(f"training_loss_{ifdrag}_{trainm}.png"))
+        now = time.time()
+        train_time_arr.append((now - start))
 
-            np.savetxt(f"../5-spring-training-time/lgn.txt", train_time_arr, delimiter = "\n")
-            np.savetxt(f"../5-spring-training-loss/lgn-train.txt", larray, delimiter = "\n")
-            np.savetxt(f"../5-spring-training-loss/lgn-test.txt", ltarray, delimiter = "\n")
-        
-
-    plt.clf()
     fig, axs = panel(1, 1)
     plt.semilogy(larray[1:], label="Training")
     plt.semilogy(ltarray[1:], label="Test")
@@ -496,9 +525,9 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
     savefile(f"loss_array_{ifdrag}_{trainm}.dil",
              (larray, ltarray), metadata=metadata)
 
-    np.savetxt(f"../5-spring-training-time/lgn.txt", train_time_arr, delimiter = "\n")
-    np.savetxt(f"../5-spring-training-loss/lgn-train.txt", larray, delimiter = "\n")
-    np.savetxt(f"../5-spring-training-loss/lgn-test.txt", ltarray, delimiter = "\n")
+    np.savetxt(f"../5-spring-training-time/fgnn.txt", train_time_arr, delimiter = "\n")
+    np.savetxt(f"../5-spring-training-loss/fgnn-train.txt", larray, delimiter = "\n")
+    np.savetxt(f"../5-spring-training-loss/fgnn-test.txt", ltarray, delimiter = "\n")
 
 
 fire.Fire(Main)

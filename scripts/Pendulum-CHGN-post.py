@@ -53,7 +53,7 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=3, dt=1.0e-5, useN=3, withdata=None, datapoints=100, mpass=1, grid=False, stride=1000, ifdrag=0, seed=42, rname=0, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 1):
+def main(N=3, dt=1.0e-5, useN=3, withdata=None, datapoints=100, mpass=1, grid=False, stride=1000, ifdrag=0, seed=42, rname=0, saveovito=0, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 1):
 
     if useN is None:
         useN = N
@@ -67,7 +67,7 @@ def main(N=3, dt=1.0e-5, useN=3, withdata=None, datapoints=100, mpass=1, grid=Fa
             namespace=locals())
 
     PSYS = f"{N}-Pendulum"
-    TAG = f"hgn"
+    TAG = f"chgn"
     
     if (ifDataEfficiency == 1):
         out_dir = f"../data-efficiency"
@@ -297,7 +297,7 @@ def main(N=3, dt=1.0e-5, useN=3, withdata=None, datapoints=100, mpass=1, grid=Fa
 
     def Hmodel(x, v, params): return apply_fn(x, v, params["H"])
     
-    params = loadfile(f"trained_model_low.dil", trained=useN)[0]
+    params = loadfile(f"chgn_trained_model_low.dil", trained=useN)[0]
     
     def nndrag(v, params):
         return - jnp.abs(models.forward_pass(params, v.reshape(-1), activation_fn=models.SquarePlus)) * v
@@ -315,7 +315,7 @@ def main(N=3, dt=1.0e-5, useN=3, withdata=None, datapoints=100, mpass=1, grid=Fa
         
     params["drag"] = initialize_mlp([1, 5, 5, 1], key)
     
-    zdot_model, lamda_force = get_zdot_lambda(N, dim, hamiltonian=Hmodel, drag=None, constraints=None)
+    zdot_model, lamda_force = get_zdot_lambda(N, dim, hamiltonian=Hmodel, drag=None, constraints=constraints)
     zdot_model = jit(zdot_model)
     
     def zdot_model_func(z, t, params):
@@ -544,7 +544,7 @@ def main(N=3, dt=1.0e-5, useN=3, withdata=None, datapoints=100, mpass=1, grid=Fa
         pr_mom = jnp.square(pred_traj.velocity.sum(1)).sum(1)
         nexp["Perr"] += [ac_mom - pr_mom]
 
-        if ind%10==0:
+        if ind%1==0:
             savefile("trajectories.pkl", trajectories)
             savefile(f"error_parameter.pkl", nexp)
     
@@ -603,10 +603,11 @@ def main(N=3, dt=1.0e-5, useN=3, withdata=None, datapoints=100, mpass=1, grid=Fa
     gmean_herr = jnp.exp( jnp.log(jnp.array(nexp["Herr"])).mean(axis=0) )
 
     if (ifDataEfficiency == 0):
-        np.savetxt(f"../{N}-pendulum-zerr/hgn.txt", gmean_zerr, delimiter = "\n")
-        np.savetxt(f"../{N}-pendulum-herr/hgn.txt", gmean_herr, delimiter = "\n")
-        np.savetxt(f"../{N}-pendulum-simulation-time/hgn.txt", [t/maxtraj], delimiter = "\n")
+        np.savetxt(f"../{N}-pendulum-zerr/chgn.txt", gmean_zerr, delimiter = "\n")
+        np.savetxt(f"../{N}-pendulum-herr/chgn.txt", gmean_herr, delimiter = "\n")
+        np.savetxt(f"../{N}-pendulum-simulation-time/chgn.txt", [t/maxtraj], delimiter = "\n")
 
 # fire.Fire(main)
 main()
+
 
