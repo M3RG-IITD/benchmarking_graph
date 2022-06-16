@@ -1,6 +1,5 @@
 # __Benchmarking Graph__
 
-<<<<<<< HEAD
 __Requirement__
 numpy-1.20.3, jax-0.2.24, jax-md-0.1.20, jaxlib-0.1.73, jraph-0.0.1.dev
 create virtual environment using "requirements.txt" file
@@ -13,10 +12,3 @@ Run all spcripts from scripts directory
 
 2. Run respective model using "sys.py" file and post simulation using "sys-post.py" file. (sys: simulation system)
 =======
-__How to run__
-Run all spcripts from scripts directory
-
-__Requirement__
-numpy-1.20.3, jax-0.2.24, jax-md-0.1.20, jaxlib-0.1.73, jraph-0.0.1.dev
-create virtual environment using "requirements.txt" file
->>>>>>> 8fd77257e831583650979d357031fe47eea519f1
