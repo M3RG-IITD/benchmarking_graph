@@ -4,6 +4,7 @@
 
 import json
 import sys
+import os
 from datetime import datetime
 from functools import partial, wraps
 from statistics import mode
@@ -50,23 +51,7 @@ def pprint(*args, namespace=globals()):
     for arg in args:
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
-# N=5
-# dim=2
-# dt=1.0e-5
-# useN=5
-# stride=1000
-# ifdrag=0
-# seed=42
-# rname=0
-# saveovito=1
-# trainm=0
-# runs=100
-# semilog=1
-# maxtraj=100
-# plotthings=True
-# redo=0
-
-def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=42, rname=0,  saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 1):
+def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=42, rname=0,  saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 0, if_hidden_search = 0, hidden = 5, if_nhidden_search = 0, nhidden = 2, if_mpass_search = 0, mpass = 1, if_lr_search = 0, lr = 0.001, if_act_search = 0, if_noisy_data=1):
     if (ifDataEfficiency == 1):
         data_points = int(sys.argv[1])
         batch_size = int(data_points/100)
@@ -80,6 +65,18 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=42, rname=0,
     
     if (ifDataEfficiency == 1):
         out_dir = f"../data-efficiency"
+    elif (if_hidden_search == 1):
+        out_dir = f"../mlp_hidden_search"
+    elif (if_nhidden_search == 1):
+        out_dir = f"../mlp_nhidden_search"
+    elif (if_mpass_search == 1):
+        out_dir = f"../mpass_search"
+    elif (if_lr_search == 1):
+        out_dir = f"../lr_search"
+    elif (if_act_search == 1):
+        out_dir = f"../act_search"
+    elif (if_noisy_data == 1):
+        out_dir = f"../noisy_data"
     else:
         out_dir = f"../results"
 
@@ -95,8 +92,19 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=42, rname=0,
         name = ".".join(name.split(".")[:-1]) + \
             part + name.split(".")[-1]
         rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "0"
+
         if (ifDataEfficiency == 1):
             rstring = "0_" + str(data_points)
+        elif (if_hidden_search == 1):
+            rstring = "0_" + str(hidden)
+        elif (if_nhidden_search == 1):
+            rstring = "0_" + str(nhidden)
+        elif (if_mpass_search == 1):
+            rstring = "0_" + str(mpass)
+        elif (if_lr_search == 1):
+            rstring = "0_" + str(lr)
+        elif (if_act_search == 1):
+            rstring = "0_" + str("softplus")
 
         filename_prefix = f"{out_dir}/{psys}-{tag}/{rstring}/"
         file = f"{filename_prefix}/{name}"
@@ -288,7 +296,7 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=42, rname=0,
         else:
             return acceleration_fn_model(R, V, params)*mass.reshape(-1, 1)
 
-    params = loadfile(f"gnode_trained_model_low.dil", trained=useN)[0]
+    params = loadfile(f"trained_model_low.dil", trained=useN)[0]
 
     print(F_q_qdot(R, V, params))
     
@@ -537,5 +545,8 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=42, rname=0,
         np.savetxt(f"../{N}-pendulum-herr/gnode.txt", gmean_herr, delimiter = "\n")
         np.savetxt(f"../{N}-pendulum-simulation-time/gnode.txt", [t/maxtraj], delimiter = "\n")
 
-main()
-# fire.Fire(main)
+main(N = 3)
+main(N = 4)
+main(N = 5)
+
+

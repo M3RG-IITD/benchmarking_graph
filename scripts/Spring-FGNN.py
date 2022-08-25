@@ -86,15 +86,15 @@ def wrap_main(f):
 
 def Main(N=5, epochs=10000, seed=42, rname=False, saveat=10, error_fn="L2error",
          dt=1.0e-3, ifdrag=0, stride=100, trainm=1, grid=False, mpass=1, lr=0.001,
-         withdata=None, datapoints=None, batch_size=100):
+         withdata=None, datapoints=None, batch_size=100, if_noisy_data=1):
 
     return wrap_main(main)(N=N, epochs=epochs, seed=seed, rname=rname, saveat=saveat, error_fn=error_fn,
                            dt=dt, ifdrag=ifdrag, stride=stride, trainm=trainm, grid=grid, mpass=mpass, lr=lr,
-                           withdata=withdata, datapoints=datapoints, batch_size=batch_size)
+                           withdata=withdata, datapoints=datapoints, batch_size=batch_size, if_noisy_data=if_noisy_data)
 
 
 def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
-         dt=1.0e-3, ifdrag=0, stride=100, trainm=1, grid=False, mpass=1, lr=0.001, withdata=None, datapoints=None, batch_size=1000, config=None):
+         dt=1.0e-3, ifdrag=0, stride=100, trainm=1, grid=False, mpass=1, lr=0.001, withdata=None, datapoints=None, batch_size=1000, config=None, if_noisy_data=1):
 
     # print("Configs: ")
     # pprint(N, epochs, seed, rname,
@@ -106,13 +106,22 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
 
     PSYS = f"{N}-Spring"
     TAG = f"fgnn"
-    out_dir = f"../results"
+
+    if (if_noisy_data == 1):
+        out_dir = f"../noisy_data"
+    else:
+        out_dir = f"../results"
 
     def _filename(name, tag=TAG):
         # rstring = randfilename if (rname and (tag != "data")) else (
         #     "1" if (tag == "data") or (withdata == None) else f"{withdata}")
         rstring = "1" if (tag == "data") else "0"
-        filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+
+        if (tag == "data"):
+            filename_prefix = f"../results/{PSYS}-{tag}/{1}/"
+        else:
+            filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
         filename = f"{filename_prefix}/{name}".replace("//", "/")
@@ -177,6 +186,27 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
     Fs = Fs.reshape(-1, N, dim)
     Rds = Rds.reshape(-1, N, dim)
     Vds = Vds.reshape(-1, N, dim)
+
+    if (if_noisy_data == 1):
+        Rs = np.array(Rs)
+        Rds = np.array(Rds)
+        Fs = np.array(Fs)
+        Vs = np.array(Vs)
+        Vds = np.array(Vds)
+
+        np.random.seed(100)
+        for i in range(len(Rs)):
+            Rs[i] += np.random.normal(0,1,1)
+            Rds[i] += np.random.normal(0,1,1)
+            Vs[i] += np.random.normal(0,1,1)
+            Vds[i] += np.random.normal(0,1,1)
+            Fs[i] += np.random.normal(0,1,1)
+
+        Rs = jnp.array(Rs)
+        Rds = jnp.array(Rds)
+        Fs = jnp.array(Fs)
+        Vs = jnp.array(Vs)
+        Vds = jnp.array(Vds)
 
     # mask = np.random.choice(len(Rs), len(Rs), replace=False)
     # allRs = Rs[mask]

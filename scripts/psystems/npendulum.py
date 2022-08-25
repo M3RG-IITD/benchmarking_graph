@@ -1,29 +1,23 @@
 import jax.numpy as jnp
 import numpy as np
 
-
 def pendulum_connections(P):
     return (jnp.array([i for i in range(P-1)] + [i for i in range(1, P)], dtype=int),
             jnp.array([i for i in range(1, P)] + [i for i in range(P-1)], dtype=int))
-
 
 def edge_order(P):
     N = (P-1)
     return jnp.array(jnp.hstack([jnp.array(range(N, 2*N)), jnp.array(range(N))]), dtype=int)
 
-
 def get_θ(angles=(0, 360)):
     return np.random.choice(np.arange(*angles))
-
 
 def get_L():
     # return np.random.choice(np.arange(1, 2, 0.1))
     return np.random.choice([1.0])
 
-
 def get_init(P, *args, **kwargs):
     return get_init_pendulum(P, *args, **kwargs)
-
 
 def get_init_pendulum(P, dim=2, **kwargs):
     Ls = [get_L() for i in range(P)]
@@ -39,13 +33,11 @@ def get_init_pendulum(P, dim=2, **kwargs):
     R = jnp.array(pos)
     return R, 0*R
 
-
 def PEF(R, g=10.0, mass=jnp.array([1.0])):
     if len(mass) != len(R):
         mass = mass[0]*jnp.ones((len(R)))
     out = (mass*g*R[:, 1]).sum()
     return out
-
 
 def hconstraints(R, l=jnp.array([1.0])):
     if len(l) != len(R):

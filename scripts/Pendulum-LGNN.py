@@ -54,8 +54,7 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=3, epochs=10000, seed=42, rname=False,
-         dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001, datapoints=None, batch_size=100, ifDataEfficiency = 1):
+def main(N=3, epochs=10000, seed=42, rname=False,dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001, datapoints=None, batch_size=100, ifDataEfficiency = 0, if_lr_search = 0, if_act_search = 0, mpass = 1, if_mpass_search = 0, if_hidden_search = 0, hidden = 5, if_nhidden_search = 0, nhidden = 2, if_noisy_data = 1):
 
     if (ifDataEfficiency == 1):
         data_points = int(sys.argv[1])
@@ -72,6 +71,18 @@ def main(N=3, epochs=10000, seed=42, rname=False,
 
     if (ifDataEfficiency == 1):
         out_dir = f"../data-efficiency"
+    elif (if_lr_search == 1):
+        out_dir = f"../lr_search"
+    elif (if_act_search == 1):
+        out_dir = f"../act_search"
+    elif (if_mpass_search == 1):
+        out_dir = f"../mpass_search"
+    elif (if_hidden_search == 1):
+        out_dir = f"../mlp_hidden_search"
+    elif (if_nhidden_search == 1):
+        out_dir = f"../mlp_nhidden_search"
+    elif (if_noisy_data == 1):
+        out_dir = f"../noisy_data"
     else:
         out_dir = f"../results"
 
@@ -80,8 +91,22 @@ def main(N=3, epochs=10000, seed=42, rname=False,
 
         if (ifDataEfficiency == 1):
             rstring = "0_" + str(data_points)
+        elif (if_lr_search == 1):
+            rstring = "0_" + str(lr)
+        elif (if_act_search == 1):
+            rstring = "0_softplus"
+        elif (if_mpass_search == 1):
+            rstring = "0_" + str(mpass)
+        elif (if_hidden_search == 1):
+            rstring = "0_" + str(hidden)
+        elif (if_nhidden_search == 1):
+            rstring = "0_" + str(nhidden)
 
-        filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+        if (tag == "data"):
+            filename_prefix = f"../results/{PSYS}-{tag}/{0}/"
+        else:
+            filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+            
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
         filename = f"{filename_prefix}/{name}".replace("//", "/")
@@ -134,6 +159,21 @@ def main(N=3, epochs=10000, seed=42, rname=False,
     Rs = Rs.reshape(-1, N, dim)
     Vs = Vs.reshape(-1, N, dim)
     Fs = Fs.reshape(-1, N, dim)
+
+    if (if_noisy_data == 1):
+        Rs = np.array(Rs)
+        Fs = np.array(Fs)
+        Vs = np.array(Vs)
+
+        np.random.seed(100)
+        for i in range(len(Rs)):
+            Rs[i] += np.random.normal(0,1,1)
+            Vs[i] += np.random.normal(0,1,1)
+            Fs[i] += np.random.normal(0,1,1)
+
+        Rs = jnp.array(Rs)
+        Fs = jnp.array(Fs)
+        Vs = jnp.array(Vs)
 
     mask = np.random.choice(len(Rs), len(Rs), replace=False)
     allRs = Rs[mask]
@@ -202,8 +242,8 @@ def main(N=3, epochs=10000, seed=42, rname=False,
     Eei = 5
     Nei = 5
 
-    hidden = 5
-    nhidden = 2
+    hidden = hidden
+    nhidden = nhidden
 
     def get_layers(in_, out_):
         return [in_] + [hidden]*nhidden + [out_]
@@ -238,8 +278,10 @@ def main(N=3, epochs=10000, seed=42, rname=False,
         print("kinetic energy: learnable")
 
         def L_energy_fn(params, graph):
-            g, V, T = cal_graph(params, graph, eorder=eorder,
-                                useT=True)
+            if (if_act_search == 1):
+                g, V, T = cal_graph(params, graph, eorder=eorder, useT=True, act_fn=models.SoftPlus)
+            else:
+                g, V, T = cal_graph(params, graph, eorder=eorder, useT=True, mpass=mpass)
             return T - V
 
     else:
@@ -248,8 +290,10 @@ def main(N=3, epochs=10000, seed=42, rname=False,
         kin_energy = partial(lnn._T, mass=masses)
 
         def L_energy_fn(params, graph):
-            g, V, T = cal_graph(params, graph, eorder=eorder,
-                                useT=True)
+            if (if_act_search == 1):
+                g, V, T = cal_graph(params, graph, eorder=eorder, useT=True, act_fn=models.SoftPlus)
+            else:
+                g, V, T = cal_graph(params, graph, eorder=eorder, useT=True)
             return kin_energy(graph.nodes["velocity"]) - V
 
     R, V = Rs[0], Vs[0]
@@ -343,7 +387,6 @@ def main(N=3, epochs=10000, seed=42, rname=False,
     @ jit
     def opt_update(i, grads_, opt_state):
         grads_ = jax.tree_map(jnp.nan_to_num, grads_)
-        # grads_ = jax.tree_map(partial(jnp.clip, a_min=-1000.0, a_max=1000.0), grads_)
         return opt_update_(i, grads_, opt_state)
 
     def batching(*args, size=None):
@@ -395,8 +438,6 @@ def main(N=3, epochs=10000, seed=42, rname=False,
             l += l_
             count += 1
 
-        # opt_state, params, l = step(
-        #     optimizer_step, (opt_state, params, 0), Rs, Vs, Fs)
         l = l/count
         larray += [l]
         if epoch % 1 == 0:
@@ -411,7 +452,7 @@ def main(N=3, epochs=10000, seed=42, rname=False,
 
             if last_loss > larray[-1]:
                 last_loss = larray[-1]
-                savefile(f"trained_model_{ifdrag}_{trainm}_low.dil",
+                savefile(f"trained_model_low_{ifdrag}_{trainm}.dil",
                          params, metadata={"savedat": epoch})
 
         now = time.time()
@@ -431,13 +472,38 @@ def main(N=3, epochs=10000, seed=42, rname=False,
     savefile(f"loss_array_{ifdrag}_{trainm}.dil",
              (larray, ltarray), metadata={"savedat": epoch})
 
-    if (ifDataEfficiency == 0):
-        np.savetxt("../3-pendulum-training-time/lgnn.txt", train_time_arr, delimiter = "\n")
-        np.savetxt("../3-pendulum-training-loss/lgnn-train.txt", larray, delimiter = "\n")
-        np.savetxt("../3-pendulum-training-loss/lgnn-test.txt", ltarray, delimiter = "\n")
+    if (ifDataEfficiency == 0 and if_lr_search == 0 and if_act_search == 0 and if_mpass_search == 0 and if_hidden_search == 0 and if_noisy_data==0):
+        np.savetxt(f"../{N}-pendulum-training-time/lgnn.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../{N}-pendulum-training-loss/lgnn-train.txt", larray, delimiter = "\n")
+        np.savetxt(f"../{N}-pendulum-training-loss/lgnn-test.txt", ltarray, delimiter = "\n")
 
-# fire.Fire(main)
+    if (if_lr_search == 1):
+        np.savetxt(f"../lr_search/{N}-pendulum-training-time/lgnn_{lr}.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../lr_search/{N}-pendulum-training-loss/lgnn-train_{lr}.txt", larray, delimiter = "\n")
+        np.savetxt(f"../lr_search/{N}-pendulum-training-loss/lgnn-test_{lr}.txt", ltarray, delimiter = "\n")
+    
+    if (if_act_search == 1):
+        np.savetxt(f"../act_search/{N}-pendulum-training-time/lgnn_softplus.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../act_search/{N}-pendulum-training-loss/lgnn-train_softplus.txt", larray, delimiter = "\n")
+        np.savetxt(f"../act_search/{N}-pendulum-training-loss/lgnn-test_softplus.txt", ltarray, delimiter = "\n")
+
+    if (if_mpass_search == 1):
+        np.savetxt(f"../mpass_search/{N}-pendulum-training-time/lgnn_{mpass}.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../mpass_search/{N}-pendulum-training-loss/lgnn-train_{mpass}.txt", larray, delimiter = "\n")
+        np.savetxt(f"../mpass_search/{N}-pendulum-training-loss/lgnn-test_{mpass}.txt", ltarray, delimiter = "\n")
+
+    if (if_hidden_search == 1):
+        np.savetxt(f"../mlp_hidden_search/{N}-pendulum-training-time/lgnn_{hidden}.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../mlp_hidden_search/{N}-pendulum-training-loss/lgnn-train_{hidden}.txt", larray, delimiter = "\n")
+        np.savetxt(f"../mlp_hidden_search/{N}-pendulum-training-loss/lgnn-test_{hidden}.txt", ltarray, delimiter = "\n")
+
+    if (if_nhidden_search == 1):
+        np.savetxt(f"../mlp_nhidden_search/{N}-pendulum-training-time/lgnn_{nhidden}.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../mlp_nhidden_search/{N}-pendulum-training-loss/lgnn-train_{nhidden}.txt", larray, delimiter = "\n")
+        np.savetxt(f"../mlp_nhidden_search/{N}-pendulum-training-loss/lgnn-test_{nhidden}.txt", ltarray, delimiter = "\n")
+
 main()
+
 
 
 

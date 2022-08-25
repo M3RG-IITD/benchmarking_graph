@@ -44,7 +44,7 @@ config.update("jax_debug_nans", True)
 def main(N=3, dim=2, saveat=100, nconfig=100, ifdrag=0, runs=100):
     tag = f"{N}-Pendulum-data"
     seed = 42
-    out_dir = f"../results"
+    out_dir = f"../noisy_data"
     rname = False
     rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "0_10000"
     filename_prefix = f"{out_dir}/{tag}/{rstring}/"
@@ -159,6 +159,7 @@ def main(N=3, dim=2, saveat=100, nconfig=100, ifdrag=0, runs=100):
         end = time.time()
         t += end - start
         dataset_states += [model_states]
+        
         if ind % saveat == 0:
             print(f"{ind} / {len(init_confs)}")
             print("Saving datafile...")
@@ -188,11 +189,14 @@ def main(N=3, dim=2, saveat=100, nconfig=100, ifdrag=0, runs=100):
 
         title = f"{N}-Pendulum random state {ind} {ifdrag}"
         plt.title(title)
-        plt.savefig(
-            _filename(title.replace(" ", "_")+".png"), dpi=300)
+        plt.savefig(_filename(title.replace(" ", "_")+".png"), dpi=300)
         if ind >= 10:
             break
-    
+
     np.savetxt("../3-pendulum-simulation-time/simulation.txt", [t/nconfig], delimiter = "\n")
 
 fire.Fire(main)
+
+
+
+

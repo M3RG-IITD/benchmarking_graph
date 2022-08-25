@@ -70,15 +70,15 @@ def wrap_main(f):
 
 
 def Main(N=3, epochs=10000, seed=42, rname=False, error_fn="L2error", mpass=1, saveat=10,
-         dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001, datapoints=None, batch_size=100):
+         dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001, datapoints=None, batch_size=100, if_noisy_data = 1):
 
     return wrap_main(main)(N=N, epochs=epochs, seed=seed, rname=rname, error_fn=error_fn, mpass=mpass,
                            dt=dt, ifdrag=ifdrag, trainm=trainm, stride=stride, lr=lr, datapoints=datapoints,
-                           batch_size=batch_size, saveat=saveat)
+                           batch_size=batch_size, saveat=saveat, if_noisy_data = if_noisy_data)
 
 
-def main(N=3, epochs=1, seed=42, rname=False,  error_fn="L2error", mpass=1, saveat=10,
-         dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001,  withdata=None, datapoints=None, batch_size=100, config=None):
+def main(N=3, epochs=10000, seed=42, rname=False,  error_fn="L2error", mpass=1, saveat=10,
+         dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001,  withdata=None, datapoints=None, batch_size=100, config=None, if_noisy_data=1):
 
     # print("Configs: ")
     # pprint(N, epochs, seed, rname,
@@ -90,12 +90,21 @@ def main(N=3, epochs=1, seed=42, rname=False,  error_fn="L2error", mpass=1, save
 
     PSYS = f"{N}-Pendulum"
     TAG = f"lgn"
-    out_dir = f"../results"
+
+    if (if_noisy_data == 1):
+        out_dir = f"../noisy_data"
+    else:
+        out_dir = f"../results"
 
     def _filename(name, tag=TAG):
         rstring = randfilename if (rname and (tag != "data")) else (
             "0" if (tag == "data") or (withdata == None) else f"{withdata}")
-        filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+
+        if (tag == "data"):
+            filename_prefix = f"../results/{PSYS}-{tag}/{0}/"
+        else:
+            filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
         filename = f"{filename_prefix}/{name}".replace("//", "/")
@@ -150,6 +159,21 @@ def main(N=3, epochs=1, seed=42, rname=False,  error_fn="L2error", mpass=1, save
     Rs = Rs.reshape(-1, N, dim)
     Vs = Vs.reshape(-1, N, dim)
     Fs = Fs.reshape(-1, N, dim)
+
+    if (if_noisy_data == 1):
+        Rs = np.array(Rs)
+        Fs = np.array(Fs)
+        Vs = np.array(Vs)
+
+        np.random.seed(100)
+        for i in range(len(Rs)):
+            Rs[i] += np.random.normal(0,1,1)
+            Vs[i] += np.random.normal(0,1,1)
+            Fs[i] += np.random.normal(0,1,1)
+
+        Rs = jnp.array(Rs)
+        Fs = jnp.array(Fs)
+        Vs = jnp.array(Vs)
 
     mask = np.random.choice(len(Rs), len(Rs), replace=False)
     allRs = Rs[mask]
@@ -435,12 +459,12 @@ def main(N=3, epochs=1, seed=42, rname=False,  error_fn="L2error", mpass=1, save
                      (larray, ltarray), metadata=metadata)
             if last_loss > larray[-1]:
                 last_loss = larray[-1]
-                savefile(f"trained_model_{ifdrag}_{trainm}_low.dil",
+                savefile(f"trained_model_low_{ifdrag}_{trainm}.dil",
                          params, metadata=metadata)
 
-            if epoch % 10000 == 0:
-                savefile(f"trained_model_{ifdrag}_{trainm}_low_{epoch}.dil",
-                         params, metadata=metadata)
+            # if epoch % 10000 == 0:
+            #     savefile(f"trained_model_{ifdrag}_{trainm}_low_{epoch}.dil",
+            #              params, metadata=metadata)
 
         
             plt.clf()

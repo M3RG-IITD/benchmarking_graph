@@ -48,7 +48,7 @@ def pprint(*args, namespace=globals()):
     for arg in args:
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
-def main(N=5, dim=2, dt=1.0e-3, stride=100, useN=5, withdata=None, datapoints=100, grid=False, ifdrag=0, seed=42, rname=0, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 1):
+def main(N=5, dim=2, dt=1.0e-3, stride=100, useN=5, withdata=None, datapoints=100, grid=False, ifdrag=0, seed=42, rname=0, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 0, if_noisy_data=0):
     if (ifDataEfficiency == 1):
         data_points = int(sys.argv[1])
         batch_size = int(data_points/100)
@@ -58,9 +58,11 @@ def main(N=5, dim=2, dt=1.0e-3, stride=100, useN=5, withdata=None, datapoints=10
 
     PSYS = f"{N}-Spring"
     TAG = f"hgnn"
-    
+
     if (ifDataEfficiency == 1):
         out_dir = f"../data-efficiency"
+    elif (if_noisy_data == 1):
+        out_dir = f"../noisy_data"
     else:
         out_dir = f"../results"
 
@@ -72,19 +74,22 @@ def main(N=5, dim=2, dt=1.0e-3, stride=100, useN=5, withdata=None, datapoints=10
             part = f"_{ifdrag}."
         else:
             part = f"_{ifdrag}_{trainm}."
-        if trained is not None:
-            psys = f"{trained}-{PSYS.split('-')[1]}"
-        else:
-            psys = PSYS
-        name = ".".join(name.split(".")[:-1]) + \
-            part + name.split(".")[-1]
+
+        name = ".".join(name.split(".")[:-1]) + part + name.split(".")[-1]
         # rstring = randfilename if (rname and (tag != "data")) else (
         #     "0" if (tag == "data") or (withdata == None) else f"0_{withdata}")
         rstring  = "0" if (tag != "data" ) else "2"
         if (ifDataEfficiency == 1):
             rstring = "2_" + str(data_points)
 
-        filename_prefix = f"{out_dir}/{psys}-{tag}/{rstring}/"
+        if (tag == "data"):
+            filename_prefix = f"../results/{PSYS}-{tag}/{2}/"
+        elif (trained is not None):
+            psys = f"{trained}-{PSYS.split('-')[1]}"
+            filename_prefix = f"{out_dir}/{psys}-{tag}/{rstring}/"
+        else:
+            filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
         filename = f"{filename_prefix}/{name}".replace("//", "/")
@@ -318,7 +323,6 @@ def main(N=5, dim=2, dt=1.0e-3, stride=100, useN=5, withdata=None, datapoints=10
 
     Es_fn = caH_energy_fn(lag=Hactual, params=None)
     Es_pred_fn = caH_energy_fn(lag=Hmodel, params=params)
-    # Es_pred_fn(pred_traj)
 
     def net_force_fn(force=None, params=None):
         def fn(states):
@@ -558,6 +562,8 @@ def main(N=5, dim=2, dt=1.0e-3, stride=100, useN=5, withdata=None, datapoints=10
         np.savetxt(f"../{N}-spring-perr/hgnn.txt", gmean_perr, delimiter = "\n")
         np.savetxt(f"../{N}-spring-simulation-time/hgnn.txt", [t/maxtraj], delimiter = "\n")
 
+# main(N = 20)
+main(N = 5)
 
-# fire.Fire(main)
-main()
+
+

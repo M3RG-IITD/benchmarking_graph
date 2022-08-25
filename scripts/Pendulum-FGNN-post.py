@@ -42,25 +42,38 @@ config.update("jax_enable_x64", True)
 config.update("jax_debug_nans", True)
 # jax.config.update('jax_platform_name', 'gpu')
 
-
 def namestr(obj, namespace):
     return [name for name in namespace if namespace[name] is obj]
-
 
 def pprint(*args, namespace=globals()):
     for arg in args:
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
-
-def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0, withdata=None, saveovito=1, trainm=1, runs=50, semilog=1, maxtraj=100, plotthings=False, redo=0):
+def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0, withdata=None, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 0, if_hidden_search = 0, hidden = 5, if_nhidden_search = 0, nhidden = 2, if_mpass_search = 0, mpass = 1, if_lr_search = 0, lr = 0.001, if_act_search = 0, if_noisy_data=0):
 
     print("Configs: ")
     pprint(dt, stride, ifdrag,
            namespace=locals())
 
     PSYS = f"{N}-Pendulum"
-    TAG = f"ddfgn"
-    out_dir = f"../results"
+    TAG = f"fgnn"
+    
+    if (ifDataEfficiency == 1):
+        out_dir = f"../data-efficiency"
+    elif (if_hidden_search == 1):
+        out_dir = f"../mlp_hidden_search"
+    elif (if_nhidden_search == 1):
+        out_dir = f"../mlp_nhidden_search"
+    elif (if_mpass_search == 1):
+        out_dir = f"../mpass_search"
+    elif (if_lr_search == 1):
+        out_dir = f"../lr_search"
+    elif (if_act_search == 1):
+        out_dir = f"../act_search"
+    elif (if_noisy_data == 1):
+        out_dir = f"../noisy_data"
+    else:
+        out_dir = f"../results"
 
     def _filename(name, tag=TAG, trained=None):
         if tag == "data":
@@ -73,8 +86,20 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
             psys = PSYS
         name = ".".join(name.split(".")[:-1]) + \
             part + name.split(".")[-1]
-        rstring = randfilename if (rname and (tag != "data")) else (
-            "0" if (tag == "data") or (withdata == None) else f"{withdata}")
+
+        rstring = "0"
+
+        if (if_hidden_search == 1):
+            rstring = "1_" + str(hidden)
+        elif (if_nhidden_search == 1):
+            rstring = "1_" + str(nhidden)
+        elif (if_mpass_search == 1):
+            rstring = "1_" + str(mpass)
+        elif (if_lr_search == 1):
+            rstring = "1_" + str(lr)
+        elif (if_act_search == 1):
+            rstring = "1_" + str("softplus")
+
         filename_prefix = f"{out_dir}/{psys}-{tag}/{rstring}/"
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
@@ -374,6 +399,8 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
 
     t=0.0
 
+    skip = 0
+
     for ind in range(maxtraj):
 
         print(f"Simulating trajectory {ind}/{maxtraj}")
@@ -388,105 +415,110 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
         # R = dataset_states[ind].position[0]
         # V = dataset_states[ind].velocity[0]
 
-        actual_traj = sim_orig2(R, V)  # full_traj[start_:stop_]
-        start = time.time()
-        pred_traj = sim_model(R, V)
-        end = time.time()
-        t += end-start
+        try:
+            actual_traj = sim_orig2(R, V)  # full_traj[start_:stop_]
+            start = time.time()
+            pred_traj = sim_model(R, V)
+            end = time.time()
+            t += end-start
 
-        if saveovito:
-            save_ovito(f"pred_{ind}.data", [
-                state for state in NVEStates(pred_traj)], lattice="")
-            save_ovito(f"actual_{ind}.data", [
-                state for state in NVEStates(actual_traj)], lattice="")
+            if saveovito:
+                save_ovito(f"pred_{ind}.data", [
+                    state for state in NVEStates(pred_traj)], lattice="")
+                save_ovito(f"actual_{ind}.data", [
+                    state for state in NVEStates(actual_traj)], lattice="")
 
-        trajectories += [(actual_traj, pred_traj)]
-        savefile("trajectories.pkl", trajectories)
+            trajectories += [(actual_traj, pred_traj)]
+            savefile("trajectories.pkl", trajectories)
 
-        if plotthings:
-            raise Warning("Cannot calculate energy in FGN")
-            for key, traj in {"actual": actual_traj, "pred": pred_traj}.items():
+            if plotthings:
+                raise Warning("Cannot calculate energy in FGN")
+                for key, traj in {"actual": actual_traj, "pred": pred_traj}.items():
 
-                print(f"plotting energy ({key})...")
+                    print(f"plotting energy ({key})...")
 
-                Es = Es_fn(traj)
-                Es_pred = Es_pred_fn(traj)
+                    Es = Es_fn(traj)
+                    Es_pred = Es_pred_fn(traj)
 
-                Es_pred = Es_pred - Es_pred[0] + Es[0]
+                    Es_pred = Es_pred - Es_pred[0] + Es[0]
 
-                fig, axs = panel(1, 2, figsize=(20, 5))
-                axs[0].plot(Es, label=["PE", "KE", "L", "TE"], lw=6, alpha=0.5)
-                axs[1].plot(Es_pred, "--", label=["PE", "KE", "L", "TE"])
-                plt.legend(bbox_to_anchor=(1, 1), loc=2)
-                axs[0].set_facecolor("w")
+                    fig, axs = panel(1, 2, figsize=(20, 5))
+                    axs[0].plot(Es, label=["PE", "KE", "L", "TE"], lw=6, alpha=0.5)
+                    axs[1].plot(Es_pred, "--", label=["PE", "KE", "L", "TE"])
+                    plt.legend(bbox_to_anchor=(1, 1), loc=2)
+                    axs[0].set_facecolor("w")
 
-                xlabel("Time step", ax=axs)
-                ylabel("Energy", ax=axs)
+                    xlabel("Time step", ax=axs)
+                    ylabel("Energy", ax=axs)
 
-                title = f"(FGN) {N}-Pendulum Exp {ind}"
-                plt.title(title)
-                plt.savefig(_filename(title.replace(" ", "-")+f"_{key}.png"))
+                    title = f"(FGN) {N}-Pendulum Exp {ind}"
+                    plt.title(title)
+                    plt.savefig(_filename(title.replace(" ", "-")+f"_{key}.png"))
 
-                net_force_orig = net_force_orig_fn(traj)
-                net_force_model = net_force_model_fn(traj)
+                    net_force_orig = net_force_orig_fn(traj)
+                    net_force_model = net_force_model_fn(traj)
 
-                fig, axs = panel(1+R.shape[0], 1, figsize=(20,
-                                                           R.shape[0]*5), hshift=0.1, vs=0.35)
-                for i, ax in zip(range(R.shape[0]+1), axs):
-                    if i == 0:
-                        ax.text(0.6, 0.8, "Averaged over all particles",
-                                transform=ax.transAxes, color="k")
-                        ax.plot(net_force_orig.sum(axis=1), lw=6, label=[
-                                r"$F_x$", r"$F_y$", r"$F_z$"][:R.shape[1]], alpha=0.5)
-                        ax.plot(net_force_model.sum(axis=1), "--", color="k")
-                        ax.plot([], "--", c="k", label="Predicted")
-                    else:
-                        ax.text(0.6, 0.8, f"For particle {i}",
-                                transform=ax.transAxes, color="k")
-                        ax.plot(net_force_orig[:, i-1, :], lw=6, label=[r"$F_x$",
-                                r"$F_y$", r"$F_z$"][:R.shape[1]], alpha=0.5)
-                        ax.plot(net_force_model[:, i-1, :], "--", color="k")
-                        ax.plot([], "--", c="k", label="Predicted")
+                    fig, axs = panel(1+R.shape[0], 1, figsize=(20,
+                                                            R.shape[0]*5), hshift=0.1, vs=0.35)
+                    for i, ax in zip(range(R.shape[0]+1), axs):
+                        if i == 0:
+                            ax.text(0.6, 0.8, "Averaged over all particles",
+                                    transform=ax.transAxes, color="k")
+                            ax.plot(net_force_orig.sum(axis=1), lw=6, label=[
+                                    r"$F_x$", r"$F_y$", r"$F_z$"][:R.shape[1]], alpha=0.5)
+                            ax.plot(net_force_model.sum(axis=1), "--", color="k")
+                            ax.plot([], "--", c="k", label="Predicted")
+                        else:
+                            ax.text(0.6, 0.8, f"For particle {i}",
+                                    transform=ax.transAxes, color="k")
+                            ax.plot(net_force_orig[:, i-1, :], lw=6, label=[r"$F_x$",
+                                    r"$F_y$", r"$F_z$"][:R.shape[1]], alpha=0.5)
+                            ax.plot(net_force_model[:, i-1, :], "--", color="k")
+                            ax.plot([], "--", c="k", label="Predicted")
 
-                    ax.legend(loc=2, bbox_to_anchor=(1, 1),
-                              labelcolor="markerfacecolor")
-                    ax.set_ylabel("Net force")
-                    ax.set_xlabel("Time step")
-                    ax.set_title(f"{N}-Pendulum Exp {ind}")
-                plt.savefig(_filename(f"net_force_Exp_{ind}_{key}.png"))
+                        ax.legend(loc=2, bbox_to_anchor=(1, 1),
+                                labelcolor="markerfacecolor")
+                        ax.set_ylabel("Net force")
+                        ax.set_xlabel("Time step")
+                        ax.set_title(f"{N}-Pendulum Exp {ind}")
+                    plt.savefig(_filename(f"net_force_Exp_{ind}_{key}.png"))
 
-        Es = Es_fn(actual_traj)
-        Eshat = Es_fn(pred_traj)
-        H = Es[:, -1]
-        Hhat = Eshat[:, -1]
+            Es = Es_fn(actual_traj)
+            Eshat = Es_fn(pred_traj)
+            H = Es[:, -1]
+            Hhat = Eshat[:, -1]
 
-        nexp["Herr"] += [RelErr(H, Hhat)]
-        nexp["E"] += [Es, Eshat]
+            nexp["Herr"] += [RelErr(H, Hhat)]
+            nexp["E"] += [Es, Eshat]
 
-        nexp["z_pred"] += [pred_traj.position]
-        nexp["z_actual"] += [actual_traj.position]
-        nexp["Zerr"] += [RelErr(actual_traj.position,
-                                pred_traj.position)]
+            nexp["z_pred"] += [pred_traj.position]
+            nexp["z_actual"] += [actual_traj.position]
+            nexp["Zerr"] += [RelErr(actual_traj.position,
+                                    pred_traj.position)]
 
-        fig, axs = panel(1, 2, figsize=(20, 5))
-        axs[0].plot(Es, label=["PE", "KE", "L", "TE"], lw=6, alpha=0.5)
-        axs[1].plot(Eshat, "--", label=["PE", "KE", "L", "TE"])
-        plt.legend(bbox_to_anchor=(1, 1), loc=2)
-        axs[0].set_facecolor("w")
+            fig, axs = panel(1, 2, figsize=(20, 5))
+            axs[0].plot(Es, label=["PE", "KE", "L", "TE"], lw=6, alpha=0.5)
+            axs[1].plot(Eshat, "--", label=["PE", "KE", "L", "TE"])
+            plt.legend(bbox_to_anchor=(1, 1), loc=2)
+            axs[0].set_facecolor("w")
 
-        xlabel("Time step", ax=axs[0])
-        xlabel("Time step", ax=axs[1])
-        ylabel("Energy", ax=axs[0])
-        ylabel("Energy", ax=axs[1])
+            xlabel("Time step", ax=axs[0])
+            xlabel("Time step", ax=axs[1])
+            ylabel("Energy", ax=axs[0])
+            ylabel("Energy", ax=axs[1])
 
-        title = f"DDFGN {N}-Pendulum Exp {ind} Lmodel"
-        axs[1].set_title(title)
-        title = f"DDFGN {N}-Pendulum Exp {ind} Lactual"
-        axs[0].set_title(title)
+            title = f"FGNN {N}-Pendulum Exp {ind} Lmodel"
+            axs[1].set_title(title)
+            title = f"FGNN {N}-Pendulum Exp {ind} Lactual"
+            axs[0].set_title(title)
 
-        plt.savefig(_filename(title.replace(" ", "-")+f".png"))
+            plt.savefig(_filename(title.replace(" ", "-")+f".png"))
 
-    savefile(f"error_parameter.pkl", nexp)
+            savefile(f"error_parameter.pkl", nexp)
+        except:
+            print("skipped")
+            #if skip < 20:
+            skip += 1
 
     def make_plots(nexp, key, yl="Err", xl="Time", key2=None):
         print(f"Plotting err for {key}")
@@ -535,11 +567,15 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
     gmean_zerr = jnp.exp( jnp.log(jnp.array(nexp["Zerr"])).mean(axis=0) )
     gmean_herr = jnp.exp( jnp.log(jnp.array(nexp["Herr"])).mean(axis=0) )
 
-    np.savetxt("../pendulum-zerr/ddfgn.txt", gmean_zerr, delimiter = "\n")
-    np.savetxt("../pendulum-herr/ddfgn.txt", gmean_herr, delimiter = "\n")
-    np.savetxt("../pendulum-simulation-time/ddfgn.txt", [t/maxtraj], delimiter = "\n")
+    np.savetxt("../pendulum-zerr/fgnn.txt", gmean_zerr, delimiter = "\n")
+    np.savetxt("../pendulum-herr/fgnn.txt", gmean_herr, delimiter = "\n")
+    np.savetxt("../pendulum-simulation-time/fgnn.txt", [t/maxtraj], delimiter = "\n")
 
-fire.Fire(main)
+# main(N = 3)
+# main(N = 4)
+# main(N = 10)
+main(N = 20)
+
 
 
 

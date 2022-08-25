@@ -50,7 +50,7 @@ def pprint(*args, namespace=globals()):
     for arg in args:
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
-def main(N=3, dim=2, dt=1.0e-5,stride=1000, useN=3, ifdrag=0, seed=100, rname=0, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 1):
+def main(N=3, dim=2, dt=1.0e-5,stride=1000, useN=3, ifdrag=0, seed=100, rname=0, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 0, if_hidden_search = 0, hidden = 5, if_nhidden_search = 0, nhidden = 2, if_mpass_search = 0, mpass = 1, if_lr_search = 0, lr = 0.001, if_act_search = 0, if_noisy_data=1):
     if (ifDataEfficiency == 1):
         data_points = int(sys.argv[1])
         batch_size = int(data_points/100)
@@ -63,6 +63,18 @@ def main(N=3, dim=2, dt=1.0e-5,stride=1000, useN=3, ifdrag=0, seed=100, rname=0,
     
     if (ifDataEfficiency == 1):
         out_dir = f"../data-efficiency"
+    elif (if_hidden_search == 1):
+        out_dir = f"../mlp_hidden_search"
+    elif (if_nhidden_search == 1):
+        out_dir = f"../mlp_nhidden_search"
+    elif (if_mpass_search == 1):
+        out_dir = f"../mpass_search"
+    elif (if_lr_search == 1):
+        out_dir = f"../lr_search"
+    elif (if_act_search == 1):
+        out_dir = f"../act_search"
+    elif (if_noisy_data == 1):
+        out_dir = f"../noisy_data"
     else:
         out_dir = f"../results"
 
@@ -75,11 +87,21 @@ def main(N=3, dim=2, dt=1.0e-5,stride=1000, useN=3, ifdrag=0, seed=100, rname=0,
             psys = f"{trained}-{PSYS.split('-')[1]}"
         else:
             psys = PSYS
-        name = ".".join(name.split(".")[:-1]) + \
-            part + name.split(".")[-1]
+        name = ".".join(name.split(".")[:-1]) + part + name.split(".")[-1]
         rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "0"
+
         if (ifDataEfficiency == 1):
             rstring = "2_" + str(data_points)
+        elif (if_hidden_search == 1):
+            rstring = "2_" + str(hidden)
+        elif (if_nhidden_search == 1):
+            rstring = "2_" + str(nhidden)
+        elif (if_mpass_search == 1):
+            rstring = "2_" + str(mpass)
+        elif (if_lr_search == 1):
+            rstring = "2_" + str(lr)
+        elif (if_act_search == 1):
+            rstring = "2_" + str("softplus")
 
         filename_prefix = f"{out_dir}/{psys}-{tag}/{rstring}/"
         file = f"{filename_prefix}/{name}"
@@ -518,10 +540,8 @@ def main(N=3, dim=2, dt=1.0e-5,stride=1000, useN=3, ifdrag=0, seed=100, rname=0,
         np.savetxt(f"../{N}-pendulum-herr/hgnn.txt", gmean_herr, delimiter = "\n")
         np.savetxt(f"../{N}-pendulum-simulation-time/hgnn.txt", [t/maxtraj], delimiter = "\n")
 
-# fire.Fire(main)
-main()
-
-
+main(N = 4)
+main(N = 5)
 
 
 

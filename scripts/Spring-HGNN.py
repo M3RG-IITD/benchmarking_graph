@@ -50,7 +50,7 @@ def pprint(*args, namespace=globals()):
     for arg in args:
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
-def main(N = 5, epochs = 10000, seed = 42, rname = False, saveat = 100, dt = 1.0e-3, stride = 100, ifdrag = 0, trainm = 1, grid = False, mpass = 1, lr = 0.001, withdata = None, datapoints = None, batch_size = 100, ifDataEfficiency = 1):
+def main(N = 5, epochs = 10000, seed = 42, rname = False, saveat = 100, dt = 1.0e-3, stride = 100, ifdrag = 0, trainm = 1, grid = False, mpass = 1, lr = 0.001, withdata = None, datapoints = None, batch_size = 100, ifDataEfficiency = 0, if_noisy_data = 1):
     if (ifDataEfficiency == 1):
         data_points = int(sys.argv[1])
         batch_size = int(data_points/100)
@@ -65,6 +65,8 @@ def main(N = 5, epochs = 10000, seed = 42, rname = False, saveat = 100, dt = 1.0
     
     if (ifDataEfficiency == 1):
         out_dir = f"../data-efficiency"
+    elif (if_noisy_data == 1):
+        out_dir = f"../noisy_data"
     else:
         out_dir = f"../results"
 
@@ -74,7 +76,12 @@ def main(N = 5, epochs = 10000, seed = 42, rname = False, saveat = 100, dt = 1.0
         rstring = "2" if (tag == "data") else "0"
         if (ifDataEfficiency == 1):
             rstring = "2_" + str(data_points)
-        filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+        
+        if (tag == "data"):
+            filename_prefix = f"../results/{PSYS}-{tag}/{2}/"
+        else:
+            filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
         filename = f"{filename_prefix}/{name}".replace("//", "/")
@@ -114,8 +121,7 @@ def main(N = 5, epochs = 10000, seed = 42, rname = False, saveat = 100, dt = 1.0
     z_out, zdot_out = model_states
 
 
-    print(
-        f"Total number of data points: {len(dataset_states)}x{z_out.shape[0]}")
+    print(f"Total number of data points: {len(dataset_states)}x{z_out.shape[0]}")
 
     N2, dim = z_out.shape[-2:]
     N = N2//2
@@ -127,6 +133,18 @@ def main(N = 5, epochs = 10000, seed = 42, rname = False, saveat = 100, dt = 1.0
 
     Zs = Zs.reshape(-1, N2, dim)
     Zs_dot = Zs_dot.reshape(-1, N2, dim)
+
+    if (if_noisy_data == 1):
+        Zs = np.array(Zs)
+        Zs_dot = np.array(Zs_dot)
+
+        np.random.seed(100)
+        for i in range(len(Zs)):
+            Zs[i] += np.random.normal(0,1,1)
+            Zs_dot[i] += np.random.normal(0,1,1)
+
+        Zs = jnp.array(Zs)
+        Zs_dot = jnp.array(Zs_dot)
 
     mask = np.random.choice(len(Zs), len(Zs), replace=False)
     allZs = Zs[mask]

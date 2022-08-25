@@ -2,10 +2,7 @@ import jax.numpy as jnp
 import matplotlib.pyplot as plt
 import numpy as np
 
-
-def get_fully_connected_senders_and_receivers(
-    num_particles: int, self_edges: bool = False,
-):
+def get_fully_connected_senders_and_receivers(num_particles: int, self_edges: bool = False,):
     """Returns senders and receivers for fully connected particles."""
     particle_indices = np.arange(num_particles)
     senders, receivers = np.meshgrid(particle_indices, particle_indices)
@@ -14,7 +11,6 @@ def get_fully_connected_senders_and_receivers(
         mask = senders != receivers
         senders, receivers = senders[mask], receivers[mask]
     return senders, receivers
-
 
 def get_fully_edge_order(N):
     out = []
@@ -28,7 +24,6 @@ def get_fully_edge_order(N):
                 else:
                     out += [i*(N-1) + j]
     return np.array(out)
-
 
 def get_connections(a, b):
     senders = []
@@ -45,16 +40,13 @@ def get_connections(a, b):
         receivers += func(i, a, b)[1:]
     return jnp.array(senders+receivers, dtype=int).flatten(), jnp.array(receivers+senders, dtype=int).flatten()
 
-
 def edge_order(N):
     return jnp.array(list(range(N//2, N)) + list(range(N//2)), dtype=int)
-
 
 def get_init(N, *args, **kwargs):
     a = int(np.sqrt(N) - 0.1) + 1
     b = int(N/a - 0.1) + 1
     return N, get_init_spring(a, b, *args, **kwargs)
-
 
 def get_count(s, i):
     c = 0
@@ -62,7 +54,6 @@ def get_count(s, i):
         if item == i:
             c += 1
     return c
-
 
 def check(i, j, senders, receivers):
     bool = True
@@ -74,7 +65,6 @@ def check(i, j, senders, receivers):
             bool = False
             break
     return bool
-
 
 def get_init_ab(a, b, L=1, dim=2):
     R = jnp.array(np.random.rand(a, dim))*L*2
@@ -103,7 +93,6 @@ def get_init_ab(a, b, L=1, dim=2):
 
     return R, V, jnp.array(senders, dtype=int), jnp.array(receivers, dtype=int)
 
-
 def get_init_spring(a, b, L=1, dim=2, grid=True):
     if grid:
         def rand():
@@ -126,7 +115,6 @@ def get_init_spring(a, b, L=1, dim=2, grid=True):
         V = V - V.mean(axis=0)
         return R, V
 
-
 def plot_conf(R, senders, receivers, s=500, **kwargs):
     plt.scatter(R[:, 0], R[:, 1], s=s/np.sqrt(len(R)), **kwargs)
     Ri = R[senders]
@@ -134,7 +122,6 @@ def plot_conf(R, senders, receivers, s=500, **kwargs):
     for a, b in zip(Ri, Rf):
         plt.plot([a[0], b[0]], [a[1], b[1]])
     plt.show()
-
 
 def chain(N, L=2, dim=2):
     R = jnp.array(np.random.rand(N, dim))*L

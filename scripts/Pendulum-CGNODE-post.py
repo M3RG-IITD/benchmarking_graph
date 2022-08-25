@@ -66,7 +66,7 @@ def pprint(*args, namespace=globals()):
 # plotthings=True
 # redo=0
 
-def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=42, rname=0,  saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 1):
+def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=42, rname=0,  saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 0, if_noisy_data=1):
     if (ifDataEfficiency == 1):
         data_points = int(sys.argv[1])
         batch_size = int(data_points/100)
@@ -80,6 +80,8 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=42, rname=0,
     
     if (ifDataEfficiency == 1):
         out_dir = f"../data-efficiency"
+    elif (if_noisy_data == 1):
+        out_dir = f"../noisy_data"
     else:
         out_dir = f"../results"
 
@@ -289,7 +291,7 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=42, rname=0,
         else:
             return acceleration_fn_model(R, V, params)*mass.reshape(-1, 1)
 
-    params = loadfile(f"cgnode_trained_model_low.dil", trained=useN)[0]
+    params = loadfile(f"trained_model_low.dil", trained=useN)[0]
 
     print(F_q_qdot(R, V, params))
     
@@ -538,5 +540,10 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=42, rname=0,
         np.savetxt(f"../{N}-pendulum-herr/cgnode.txt", gmean_herr, delimiter = "\n")
         np.savetxt(f"../{N}-pendulum-simulation-time/cgnode.txt", [t/maxtraj], delimiter = "\n")
 
-main()
-# fire.Fire(main)
+main(N = 4)
+main(N = 5)
+
+
+
+
+

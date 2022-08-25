@@ -55,7 +55,7 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0,  saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 1):
+def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0,  saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 0, if_hidden_search = 0, hidden = 5, if_nhidden_search = 0, nhidden = 2, if_mpass_search = 0, mpass = 1, if_lr_search = 0, lr = 0.001, if_act_search = 0, if_noisy_data=1):
     if (ifDataEfficiency == 1):
         data_points = int(sys.argv[1])
         batch_size = int(data_points/100)
@@ -69,6 +69,18 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
     
     if (ifDataEfficiency == 1):
         out_dir = f"../data-efficiency"
+    elif (if_hidden_search == 1):
+        out_dir = f"../mlp_hidden_search"
+    elif (if_nhidden_search == 1):
+        out_dir = f"../mlp_nhidden_search"
+    elif (if_mpass_search == 1):
+        out_dir = f"../mpass_search"
+    elif (if_lr_search == 1):
+        out_dir = f"../lr_search"
+    elif (if_act_search == 1):
+        out_dir = f"../act_search"
+    elif (if_noisy_data == 1):
+        out_dir = f"../noisy_data"
     else:
         out_dir = f"../results"
 
@@ -81,13 +93,25 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
             psys = f"{trained}-{PSYS.split('-')[1]}"
         else:
             psys = PSYS
-        name = ".".join(name.split(".")[:-1]) + \
-            part + name.split(".")[-1]
+
+        name = ".".join(name.split(".")[:-1]) + part + name.split(".")[-1]
         rstring = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") if rname else "0"
+
         if (ifDataEfficiency == 1):
             rstring = "0_" + str(data_points)
+        elif (if_hidden_search == 1):
+            rstring = "0_" + str(hidden)
+        elif (if_nhidden_search == 1):
+            rstring = "0_" + str(nhidden)
+        elif (if_mpass_search == 1):
+            rstring = "0_" + str(mpass)
+        elif (if_lr_search == 1):
+            rstring = "0_" + str(lr)
+        elif (if_act_search == 1):
+            rstring = "0_" + str("softplus")
 
         filename_prefix = f"{out_dir}/{psys}-{tag}/{rstring}/"
+
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
         filename = f"{filename_prefix}/{name}".replace("//", "/")
@@ -103,8 +127,7 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
     def OUT(f):
         @wraps(f)
         def func(file, *args, tag=TAG, trained=None, **kwargs):
-            return f(_filename(file, tag=tag, trained=trained),
-                     *args, **kwargs)
+            return f(_filename(file, tag=tag, trained=trained),*args, **kwargs)
         return func
 
     def _fileexist(f):
@@ -414,7 +437,7 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
 
                 title = f"(LGNN) {N}-Pendulum Exp {ind}"
                 plt.title(title)
-                plt.savefig(_filename(title.replace(" ", "-")+f"_{key}.png"))
+                # plt.savefig(_filename(title.replace(" ", "-")+f"_{key}.png"))
 
                 net_force_orig = net_force_orig_fn(traj)
                 net_force_model = net_force_model_fn(traj)
@@ -443,7 +466,7 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
                     ax.set_ylabel("Net force")
                     ax.set_xlabel("Time step")
                     ax.set_title(f"{N}-Pendulum Exp {ind}")
-                plt.savefig(_filename(f"net_force_Exp_{ind}_{key}.png"))
+                # plt.savefig(_filename(f"net_force_Exp_{ind}_{key}.png"))
 
         Es = Es_fn(actual_traj)
         Eshat = Es_fn(pred_traj)
@@ -477,7 +500,7 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
         title = f"LGNN {N}-Pendulum Exp {ind} Lactual"
         axs[0].set_title(title)
 
-        plt.savefig(_filename(title.replace(" ", "-")+f".png"))
+        # plt.savefig(_filename(title.replace(" ", "-")+f".png"))
 
     savefile(f"error_parameter.pkl", nexp)
 
@@ -530,13 +553,19 @@ def main(N=3, dim=2, dt=1.0e-5, useN=3, stride=1000, ifdrag=0, seed=100, rname=0
     gmean_zerr = jnp.exp( jnp.log(jnp.array(nexp["Zerr"])).mean(axis=0) )
     gmean_herr = jnp.exp( jnp.log(jnp.array(nexp["Herr"])).mean(axis=0) )
 
-    if (ifDataEfficiency == 0):
+    if (if_hidden_search == 0):
+        np.savetxt(_filename("lgnn_zerr.txt"), gmean_zerr, delimiter = "\n")
+        np.savetxt(_filename("lgnn_herr.txt"), gmean_herr, delimiter = "\n")
+        np.savetxt(_filename("lgnn_sim_time.txt"), [t/maxtraj], delimiter = "\n")
+    else:
         np.savetxt(f"../{N}-pendulum-zerr/lgnn.txt", gmean_zerr, delimiter = "\n")
         np.savetxt(f"../{N}-pendulum-herr/lgnn.txt", gmean_herr, delimiter = "\n")
         np.savetxt(f"../{N}-pendulum-simulation-time/lgnn.txt", [t/maxtraj], delimiter = "\n")
 
-# fire.Fire(main)
-main()
+main(N = 4)
+main(N = 5)
+
+
 
 
 

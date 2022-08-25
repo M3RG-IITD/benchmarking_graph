@@ -4,6 +4,7 @@
 
 import json
 import sys
+import os
 from datetime import datetime
 from functools import partial, wraps
 from statistics import mode
@@ -53,7 +54,7 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=3, dt=1.0e-5, useN=3, withdata=None, datapoints=100, mpass=1, grid=False, stride=1000, ifdrag=0, seed=42, rname=0, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 1):
+def main(N=3, dt=1.0e-5, useN=3, withdata=None, datapoints=100, mpass=1, grid=False, stride=1000, ifdrag=0, seed=42, rname=0, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 0, if_noisy_data=1):
 
     if useN is None:
         useN = N
@@ -71,6 +72,8 @@ def main(N=3, dt=1.0e-5, useN=3, withdata=None, datapoints=100, mpass=1, grid=Fa
     
     if (ifDataEfficiency == 1):
         out_dir = f"../data-efficiency"
+    elif (if_noisy_data == 1):
+        out_dir = f"../noisy_data"
     else:
         out_dir = f"../results"
 
@@ -86,8 +89,7 @@ def main(N=3, dt=1.0e-5, useN=3, withdata=None, datapoints=100, mpass=1, grid=Fa
             psys = f"{trained}-{PSYS.split('-')[1]}"
         else:
             psys = PSYS
-        name = ".".join(name.split(".")[:-1]) + \
-            part + name.split(".")[-1]
+        name = ".".join(name.split(".")[:-1]) + part + name.split(".")[-1]
         rstring = randfilename if (rname and (tag != "data")) else (
             "0" if (tag == "data") or (withdata == None) else f"{withdata}")
         if (ifDataEfficiency == 1):
@@ -607,6 +609,10 @@ def main(N=3, dt=1.0e-5, useN=3, withdata=None, datapoints=100, mpass=1, grid=Fa
         np.savetxt(f"../{N}-pendulum-herr/hgn.txt", gmean_herr, delimiter = "\n")
         np.savetxt(f"../{N}-pendulum-simulation-time/hgn.txt", [t/maxtraj], delimiter = "\n")
 
-# fire.Fire(main)
 main()
+# main(N = 4)
+# main(N = 5)
+
+
+
 

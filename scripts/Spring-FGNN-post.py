@@ -4,6 +4,7 @@
 
 import json
 import sys
+import os
 from datetime import datetime
 from functools import partial, wraps
 from statistics import mode
@@ -51,7 +52,7 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=5, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=False, stride=100, ifdrag=0, seed=42, rname=0, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0):
+def main(N=5, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=False, stride=100, ifdrag=0, seed=42, rname=0, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, if_noisy_data=0):
 
     if useN is None:
         useN = N
@@ -62,10 +63,13 @@ def main(N=5, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
 
     PSYS = f"{N}-Spring"
     TAG = f"fgnn"
-    out_dir = f"../results"
 
-    randfilename = datetime.now().strftime(
-        "%m-%d-%Y_%H-%M-%S") + f"_{datapoints}"
+    if (if_noisy_data == 1):
+        out_dir = f"../noisy_data"
+    else:
+        out_dir = f"../results"
+
+    randfilename = datetime.now().strftime("%m-%d-%Y_%H-%M-%S") + f"_{datapoints}"
 
     def _filename(name, tag=TAG, trained=None):
         if tag == "data":
@@ -76,11 +80,16 @@ def main(N=5, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
             psys = f"{trained}-{PSYS.split('-')[1]}"
         else:
             psys = PSYS
-        name = ".".join(name.split(".")[:-1]) + \
-            part + name.split(".")[-1]
+
+        name = ".".join(name.split(".")[:-1]) + part + name.split(".")[-1]
         rstring = randfilename if (rname and (tag != "data")) else (
             "0" if (tag == "data") or (withdata == None) else f"{withdata}")
-        filename_prefix = f"{out_dir}/{psys}-{tag}/{rstring}/"
+
+        if (tag == "data"):
+            filename_prefix = f"../results/{PSYS}-{tag}/{0}/"
+        else:
+            filename_prefix = f"{out_dir}/{psys}-{tag}/{rstring}/"
+
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
         filename = f"{filename_prefix}/{name}".replace("//", "/")
@@ -530,8 +539,8 @@ def main(N=5, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
                 _filename(f"FGN {N}-Spring Exp {ind}".replace(" ", "-")+f"_actualH.png"))
         except:
             print("skipped")
-            if skip < 20:
-                skip += 1
+            #if skip < 20:
+            skip += 1
 
     savefile(f"error_parameter.pkl", nexp)
 
@@ -582,5 +591,12 @@ def main(N=5, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
     np.savetxt(f"../{N}-spring-herr/fgnn.txt", gmean_herr, delimiter = "\n")
     np.savetxt(f"../{N}-spring-perr/fgnn.txt", gmean_perr, delimiter = "\n")
     np.savetxt(f"../{N}-spring-simulation-time/fgnn.txt", [t/maxtraj], delimiter = "\n")
+    print(skip)
 
-fire.Fire(main)
+main(N = 5)
+# main(N = 50)
+
+
+
+
+

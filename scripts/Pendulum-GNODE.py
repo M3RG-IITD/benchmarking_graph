@@ -4,6 +4,7 @@
 
 import json
 import sys
+import os
 from datetime import datetime
 from functools import partial, wraps
 from statistics import mode
@@ -59,15 +60,20 @@ dt=1.0e-5
 ifdrag=0
 trainm=1
 stride=1000
-lr=0.001
+lr=0.3
 withdata=None
 datapoints=None
 batch_size=100
-ifDataEfficiency = 1
-
-
-# def main(N=2, epochs=10000, seed=42, rname=True,
-#          dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001, withdata=None, datapoints=None, batch_size=1000):
+ifDataEfficiency = 0
+if_lr_search = 0
+if_act_search = 0
+if_mpass_search = 0
+mpass = 1
+if_hidden_search = 0
+hidden = 5
+if_nhidden_search = 0
+nhidden = 2
+if_noisy_data = 1
 
 print("Configs: ")
 pprint(N, epochs, seed, rname,
@@ -86,18 +92,42 @@ TAG = f"gnode"
 
 if (ifDataEfficiency == 1):
     out_dir = f"../data-efficiency"
+elif (if_lr_search == 1):
+    out_dir = f"../lr_search"
+elif (if_act_search == 1):
+    out_dir = f"../act_search"
+elif (if_mpass_search == 1):
+    out_dir = f"../mpass_search"
+elif (if_hidden_search == 1):
+    out_dir = f"../mlp_hidden_search"
+elif (if_nhidden_search == 1):
+    out_dir = f"../mlp_nhidden_search"
+elif (if_noisy_data == 1):
+    out_dir = f"../noisy_data"
 else:
     out_dir = f"../results"
 
 def _filename(name, tag=TAG):
-    rstring = randfilename if (rname and (tag != "data")) else (
-        "0" if (tag == "data") or (withdata == None) else f"0_{withdata}")
-    rstring = "0"
-
     if (ifDataEfficiency == 1):
-            rstring = "0_" + str(data_points)
+        rstring = "0_" + str(data_points)
+    elif (if_lr_search == 1):
+        rstring = "0_" + str(lr)
+    elif (if_act_search == 1):
+        rstring = "0_softplus"
+    elif (if_mpass_search == 1):
+        rstring = "0_" + str(mpass)
+    elif (if_hidden_search == 1):
+        rstring = "0_" + str(hidden)
+    elif (if_nhidden_search == 1):
+        rstring = "0_" + str(nhidden)
+    else:
+        rstring = "0"
 
-    filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+    if (tag == "data"):
+        filename_prefix = f"../results/{PSYS}-{tag}/{0}/"
+    else:
+        filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+
     file = f"{filename_prefix}/{name}"
     os.makedirs(os.path.dirname(file), exist_ok=True)
     filename = f"{filename_prefix}/{name}".replace("//", "/")
@@ -154,6 +184,21 @@ Rs, Vs, Fs = States().fromlist(dataset_states).get_array()
 Rs = Rs.reshape(-1, 1, N, dim)
 Vs = Vs.reshape(-1, 1, N, dim)
 Fs = Fs.reshape(-1, 1, N, dim)
+
+if (if_noisy_data == 1):
+    Rs = np.array(Rs)
+    Fs = np.array(Fs)
+    Vs = np.array(Vs)
+
+    np.random.seed(100)
+    for i in range(len(Rs)):
+        Rs[i] += np.random.normal(0,1,1)
+        Vs[i] += np.random.normal(0,1,1)
+        Fs[i] += np.random.normal(0,1,1)
+
+    Rs = jnp.array(Rs)
+    Fs = jnp.array(Fs)
+    Vs = jnp.array(Vs)
 
 mask = np.random.choice(len(Rs), len(Rs), replace=False)
 allRs = Rs[mask]
@@ -226,8 +271,8 @@ Eei = 5
 Nei = 5
 Nei_ = 5 # for mass learning
 
-hidden = 5
-nhidden = 2
+hidden = hidden
+nhidden = nhidden
 
 def get_layers(in_, out_):
     return [in_] + [hidden]*nhidden + [out_]
@@ -264,8 +309,10 @@ Fparams = dict(fb=fb_params,
 params = {"Fqqdot": Fparams}
 
 def graph_force_fn(params, graph):
-    _GForce = cdgnode_cal_force_q_qdot(params, graph, eorder=eorder,
-                        useT=True)
+    if (if_act_search == 1):
+        _GForce = cdgnode_cal_force_q_qdot(params, graph, eorder=eorder, useT=True, act_fn=models.SoftPlus)
+    else:
+        _GForce = cdgnode_cal_force_q_qdot(params, graph, eorder=eorder, useT=True, mpass=mpass)
     return _GForce
 
 R, V = Rs[0][0], Vs[0][0]
@@ -420,13 +467,13 @@ for epoch in range(epochs):
                 "ifdrag": ifdrag,
                 "trainm": trainm,
             }
-        savefile(f"gnode_trained_model_{ifdrag}_{trainm}.dil",
+        savefile(f"trained_model_{ifdrag}_{trainm}.dil",
                     params, metadata=metadata)
         savefile(f"loss_array_{ifdrag}_{trainm}.dil",
                     (larray, ltarray), metadata=metadata)
         if last_loss > larray[-1]:
             last_loss = larray[-1]
-            savefile(f"gnode_trained_model_low_{ifdrag}_{trainm}.dil",
+            savefile(f"trained_model_low_{ifdrag}_{trainm}.dil",
                         params, metadata=metadata)
     
         plt.clf()
@@ -451,40 +498,43 @@ plt.legend()
 plt.savefig(_filename(f"training_loss_{ifdrag}_{trainm}.png"))
 
 params = get_params(opt_state)
-savefile(f"gnode_trained_model_{ifdrag}_{trainm}.dil",
+savefile(f"trained_model_{ifdrag}_{trainm}.dil",
             params, metadata=metadata)
 savefile(f"loss_array_{ifdrag}_{trainm}.dil",
             (larray, ltarray), metadata=metadata)
 if last_loss > larray[-1]:
     last_loss = larray[-1]
-    savefile(f"gnode_trained_model_{ifdrag}_{trainm}_low.dil",
+    savefile(f"trained_model_{ifdrag}_{trainm}_low.dil",
                 params, metadata=metadata)
 
-if (ifDataEfficiency == 0):
+if (ifDataEfficiency == 0 and if_lr_search == 0 and if_act_search == 0 and if_mpass_search == 0):
     np.savetxt("../3-pendulum-training-time/gnode.txt", train_time_arr, delimiter = "\n")
     np.savetxt("../3-pendulum-training-loss/gnode-train.txt", larray, delimiter = "\n")
     np.savetxt("../3-pendulum-training-loss/gnode-test.txt", ltarray, delimiter = "\n")
 
-# main()
+if (if_lr_search == 1):
+    np.savetxt(f"../lr_search/{N}-pendulum-training-time/gnode_{lr}.txt", train_time_arr, delimiter = "\n")
+    np.savetxt(f"../lr_search/{N}-pendulum-training-loss/gnode-train_{lr}.txt", larray, delimiter = "\n")
+    np.savetxt(f"../lr_search/{N}-pendulum-training-loss/gnode-test_{lr}.txt", ltarray, delimiter = "\n")
 
-# fire.Fire(main)
+if (if_act_search == 1):
+    np.savetxt(f"../act_search/{N}-pendulum-training-time/gnode_softplus.txt", train_time_arr, delimiter = "\n")
+    np.savetxt(f"../act_search/{N}-pendulum-training-loss/gnode-train_softplus.txt", larray, delimiter = "\n")
+    np.savetxt(f"../act_search/{N}-pendulum-training-loss/gnode-test_softplus.txt", ltarray, delimiter = "\n")
 
-# x=R
-# v=V
-# F_q_qdot(x, v, params)
+if (if_mpass_search == 1):
+    np.savetxt(f"../mpass_search/{N}-pendulum-training-time/gnode_{mpass}.txt", train_time_arr, delimiter = "\n")
+    np.savetxt(f"../mpass_search/{N}-pendulum-training-loss/gnode-train_{mpass}.txt", larray, delimiter = "\n")
+    np.savetxt(f"../mpass_search/{N}-pendulum-training-loss/gnode-test_{mpass}.txt", ltarray, delimiter = "\n")
 
-# nn = np.prod(R.shape)
-# params1 = initialize_mlp([nn, 100, nn], key)
+if (if_hidden_search == 1):
+    np.savetxt(f"../mlp_hidden_search/{N}-pendulum-training-time/gnode_{hidden}.txt", train_time_arr, delimiter = "\n")
+    np.savetxt(f"../mlp_hidden_search/{N}-pendulum-training-loss/gnode-train_{hidden}.txt", larray, delimiter = "\n")
+    np.savetxt(f"../mlp_hidden_search/{N}-pendulum-training-loss/gnode-test_{hidden}.txt", ltarray, delimiter = "\n")
 
-# params = {
-#     0: params,
-#     1: params1
-# }
+if (if_nhidden_search == 1):
+    np.savetxt(f"../mlp_nhidden_search/{N}-pendulum-training-time/gnode_{nhidden}.txt", train_time_arr, delimiter = "\n")
+    np.savetxt(f"../mlp_nhidden_search/{N}-pendulum-training-loss/gnode-train_{nhidden}.txt", larray, delimiter = "\n")
+    np.savetxt(f"../mlp_nhidden_search/{N}-pendulum-training-loss/gnode-test_{nhidden}.txt", ltarray, delimiter = "\n")
 
-# def MLP_(params, s, v):
-#     xx = s + v
-#     return forward_pass(params, xx, activation_fn=SquarePlus)
 
-# def qddot(x, v, params):
-#     S = F_q_qdot(x,v,params[0])
-#     return (S.flatten() - MLP_(params[1], S.flatten(), v.flatten())).reshape(-1, dim)

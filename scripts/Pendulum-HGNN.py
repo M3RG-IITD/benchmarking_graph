@@ -41,32 +41,14 @@ import time
 config.update("jax_enable_x64", True)
 config.update("jax_debug_nans", True)
 
-
 def namestr(obj, namespace):
     return [name for name in namespace if namespace[name] is obj]
-
 
 def pprint(*args, namespace=globals()):
     for arg in args:
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
-
-
-# N = 2
-# epochs = 10000
-# seed = 42
-# rname = True
-# dt = 1.0e-5
-# ifdrag = 0
-# stride=1000
-# trainm = 1
-# lr = 0.001
-# withdata = None
-# datapoints = None
-# batch_size = 1000
-
-def main(N = 3, epochs = 10000, seed = 42, rname = False,
-        dt = 1.0e-5, ifdrag = 0, trainm = 1, stride=1000, lr = 0.001, withdata = None, datapoints = None, batch_size = 100, ifDataEfficiency = 1):    
+def main(N = 3, epochs = 10000, seed = 42, rname = False,dt = 1.0e-5, ifdrag = 0, trainm = 1, stride=1000, lr = 0.001, withdata = None, datapoints = None, batch_size = 100, ifDataEfficiency = 0, if_lr_search = 0, if_act_search = 0, mpass = 1, if_mpass_search = 0, if_hidden_search = 0, hidden = 5, if_nhidden_search=0, nhidden=2, if_noisy_data = 1):    
     
     if (ifDataEfficiency == 1):
         data_points = int(sys.argv[1])
@@ -79,12 +61,23 @@ def main(N = 3, epochs = 10000, seed = 42, rname = False,
 
     PSYS = f"{N}-Pendulum"
     TAG = f"hgnn"
-   
+
     if (ifDataEfficiency == 1):
         out_dir = f"../data-efficiency"
+    elif (if_lr_search == 1):
+        out_dir = f"../lr_search"
+    elif (if_act_search == 1):
+        out_dir = f"../act_search"
+    elif (if_mpass_search == 1):
+        out_dir = f"../mpass_search"
+    elif (if_hidden_search == 1):
+        out_dir = f"../mlp_hidden_search"
+    elif (if_nhidden_search == 1):
+        out_dir = f"../mlp_nhidden_search"
+    elif (if_noisy_data == 1):
+        out_dir = f"../noisy_data"
     else:
         out_dir = f"../results"
-
 
     def _filename(name, tag=TAG):
         # rstring = randfilename if (rname and (tag != "data")) else (
@@ -93,8 +86,22 @@ def main(N = 3, epochs = 10000, seed = 42, rname = False,
 
         if (ifDataEfficiency == 1):
             rstring = "2_" + str(data_points)
+        elif (if_lr_search == 1):
+            rstring = "2_" + str(lr)
+        elif (if_mpass_search == 1):
+            rstring = "2_" + str(mpass)
+        elif (if_act_search == 1):
+            rstring = "2_softplus"
+        elif (if_hidden_search == 1):
+            rstring = "2_" + str(hidden)
+        elif (if_nhidden_search == 1):
+            rstring = "2_" + str(nhidden)
 
-        filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+        if (tag == "data"):
+            filename_prefix = f"../results/{PSYS}-{tag}/{2}/"
+        else:
+            filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
         filename = f"{filename_prefix}/{name}".replace("//", "/")
@@ -134,8 +141,7 @@ def main(N = 3, epochs = 10000, seed = 42, rname = False,
     z_out, zdot_out = model_states
     
 
-    print(
-        f"Total number of data points: {len(dataset_states)}x{z_out.shape[0]}")
+    print(f"Total number of data points: {len(dataset_states)}x{z_out.shape[0]}")
     
     N2, dim = z_out.shape[-2:]
     N = N2//2
@@ -149,6 +155,18 @@ def main(N = 3, epochs = 10000, seed = 42, rname = False,
 
     Zs = Zs.reshape(-1, N2, dim)
     Zs_dot = Zs_dot.reshape(-1, N2, dim)
+
+    if (if_noisy_data == 1):
+        Zs = np.array(Zs)
+        Zs_dot = np.array(Zs_dot)
+
+        np.random.seed(100)
+        for i in range(len(Zs)):
+            Zs[i] += np.random.normal(0,1,1)
+            Zs_dot[i] += np.random.normal(0,1,1)
+
+        Zs = jnp.array(Zs)
+        Zs_dot = jnp.array(Zs_dot)
 
     mask = np.random.choice(len(Zs), len(Zs), replace=False)
     allZs = Zs[mask]
@@ -190,8 +208,8 @@ def main(N = 3, epochs = 10000, seed = 42, rname = False,
     Eei = 5
     Nei = 5
 
-    hidden = 5
-    nhidden = 2
+    hidden = hidden
+    nhidden = nhidden
 
 
     def get_layers(in_, out_):
@@ -225,15 +243,15 @@ def main(N = 3, epochs = 10000, seed = 42, rname = False,
                 fneke=fneke_params,
                 ke=ke_params)
 
-
     def H_energy_fn(params, graph):
-        g, V, T = cal_graph(params, graph, eorder=eorder,
-                            useT=True)
+        if (if_act_search == 1):
+            g, V, T = cal_graph(params, graph, eorder=eorder, useT=True, act_fn=models.SoftPlus)
+        else:
+            g, V, T = cal_graph(params, graph, eorder=eorder, useT=True, mpass=mpass)
         return T + V
 
-
     R, V = jnp.split(Zs[0], 2, axis=0)
-    
+
     state_graph = jraph.GraphsTuple(nodes={
         "position": R,
         "velocity": V,
@@ -268,21 +286,16 @@ def main(N = 3, epochs = 10000, seed = 42, rname = False,
             return H_energy_fn(params, state_graph)
         return apply
 
-
     apply_fn = energy_fn(species)
     v_apply_fn = vmap(apply_fn, in_axes=(None, 0))
-
 
     def Hmodel(x, v, params):
         return apply_fn(x, v, params["H"])
 
-
     params = {"H": Hparams}
-
 
     def nndrag(v, params):
         return - jnp.abs(models.forward_pass(params, v.reshape(-1), activation_fn=models.SquarePlus)) * v
-
 
     if ifdrag == 0:
         print("Drag: 0.0")
@@ -297,13 +310,6 @@ def main(N = 3, epochs = 10000, seed = 42, rname = False,
 
     params["drag"] = initialize_mlp([1, 5, 5, 1], key)
 
-    # def external_force(x, p, params):
-    #         F = 0*p
-    #         F = jax.ops.index_update(F, (1, 1), -1.0)
-    #         return F.reshape(-1, 1)
-        
-        
-
     zdot_model, lamda_force_model = get_zdot_lambda(
         N, dim, hamiltonian=Hmodel, drag=None, constraints=None,external_force=None)
 
@@ -314,16 +320,13 @@ def main(N = 3, epochs = 10000, seed = 42, rname = False,
     ################## ML Training #################
     ################################################
 
-
     @jit
     def loss_fn(params, Rs, Vs, Zs_dot):
         pred = v_zdot_model(Rs, Vs, params)
         return MSE(pred, Zs_dot)
 
-
     def gloss(*args):
         return value_and_grad(loss_fn)(*args)
-
 
     def update(i, opt_state, params, loss__, *data):
         """ Compute the gradient for a batch and update the parameters """
@@ -331,21 +334,17 @@ def main(N = 3, epochs = 10000, seed = 42, rname = False,
         opt_state = opt_update(i, grads_, opt_state)
         return opt_state, get_params(opt_state), value
 
-
     @ jit
     def step(i, ps, *args):
         return update(i, *ps, *args)
 
-
     opt_init, opt_update_, get_params = optimizers.adam(lr)
-
 
     @ jit
     def opt_update(i, grads_, opt_state):
         grads_ = jax.tree_map(jnp.nan_to_num, grads_)
         # grads_ = jax.tree_map(partial(jnp.clip, a_min=-1000.0, a_max=1000.0), grads_)
         return opt_update_(i, grads_, opt_state)
-
 
     def batching(*args, size=None):
         L = len(args[0])
@@ -435,13 +434,46 @@ def main(N = 3, epochs = 10000, seed = 42, rname = False,
     savefile(f"loss_array_{ifdrag}_{trainm}.dil",
             (larray, ltarray), metadata={"savedat": epoch})
 
-    if (ifDataEfficiency == 0):
-        np.savetxt("../3-pendulum-training-time/hgnn.txt", train_time_arr, delimiter = "\n")
-        np.savetxt("../3-pendulum-training-loss/hgnn-train.txt", larray, delimiter = "\n")
-        np.savetxt("../3-pendulum-training-loss/hgnn-test.txt", ltarray, delimiter = "\n")
+    if (ifDataEfficiency == 0 and if_lr_search == 0 and if_act_search == 0 and if_mpass_search == 0 and if_hidden_search == 0 and if_nhidden_search == 0):
+        np.savetxt(f"../{N}-pendulum-training-time/hgnn.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../{N}-pendulum-training-loss/hgnn-train.txt", larray, delimiter = "\n")
+        np.savetxt(f"../{N}-pendulum-training-loss/hgnn-test.txt", ltarray, delimiter = "\n")
 
-# fire.Fire(main)
+    if (if_lr_search == 1):
+        np.savetxt(f"../lr_search/{N}-pendulum-training-time/hgnn_{lr}.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../lr_search/{N}-pendulum-training-loss/hgnn-train_{lr}.txt", larray, delimiter = "\n")
+        np.savetxt(f"../lr_search/{N}-pendulum-training-loss/hgnn-test_{lr}.txt", ltarray, delimiter = "\n")
+
+    if (if_act_search == 1):
+        np.savetxt(f"../act_search/{N}-pendulum-training-time/hgnn_softplus.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../act_search/{N}-pendulum-training-loss/hgnn-train_softplus.txt", larray, delimiter = "\n")
+        np.savetxt(f"../act_search/{N}-pendulum-training-loss/hgnn-test_softplus.txt", ltarray, delimiter = "\n")
+
+    if (if_mpass_search == 1):
+        np.savetxt(f"../mpass_search/{N}-pendulum-training-time/hgnn_{mpass}.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../mpass_search/{N}-pendulum-training-loss/hgnn-train_{mpass}.txt", larray, delimiter = "\n")
+        np.savetxt(f"../mpass_search/{N}-pendulum-training-loss/hgnn-test_{mpass}.txt", ltarray, delimiter = "\n")
+
+    if (if_hidden_search == 1):
+        np.savetxt(f"../mlp_hidden_search/{N}-pendulum-training-time/hgnn_{hidden}.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../mlp_hidden_search/{N}-pendulum-training-loss/hgnn-train_{hidden}.txt", larray, delimiter = "\n")
+        np.savetxt(f"../mlp_hidden_search/{N}-pendulum-training-loss/hgnn-test_{hidden}.txt", ltarray, delimiter = "\n")
+
+    if (if_nhidden_search == 1):
+        np.savetxt(f"../mlp_nhidden_search/{N}-pendulum-training-time/hgnn_{nhidden}.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../mlp_nhidden_search/{N}-pendulum-training-loss/hgnn-train_{nhidden}.txt", larray, delimiter = "\n")
+        np.savetxt(f"../mlp_nhidden_search/{N}-pendulum-training-loss/hgnn-test_{nhidden}.txt", ltarray, delimiter = "\n")
+
 main()
+# main(lr=0.3)
+# main(nhidden=4)
+# main(nhidden=8)
+# main(nhidden=16)
+
+
+
+
+
 
 
 

@@ -63,7 +63,8 @@ lr=0.001
 withdata=None
 datapoints=None
 batch_size=100
-ifDataEfficiency = 1
+ifDataEfficiency = 0
+if_noisy_data = 1
 
 
 # def main(N=2, epochs=10000, seed=42, rname=True,
@@ -86,6 +87,8 @@ TAG = f"cgnode"
 
 if (ifDataEfficiency == 1):
     out_dir = f"../data-efficiency"
+elif (if_noisy_data == 1):
+    out_dir = f"../noisy_data"
 else:
     out_dir = f"../results"
 
@@ -97,7 +100,11 @@ def _filename(name, tag=TAG):
     if (ifDataEfficiency == 1):
             rstring = "0_" + str(data_points)
 
-    filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+    if (tag == "data"):
+            filename_prefix = f"../results/{PSYS}-{tag}/{0}/"
+    else:
+        filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+
     file = f"{filename_prefix}/{name}"
     os.makedirs(os.path.dirname(file), exist_ok=True)
     filename = f"{filename_prefix}/{name}".replace("//", "/")
@@ -154,6 +161,21 @@ Rs, Vs, Fs = States().fromlist(dataset_states).get_array()
 Rs = Rs.reshape(-1, 1, N, dim)
 Vs = Vs.reshape(-1, 1, N, dim)
 Fs = Fs.reshape(-1, 1, N, dim)
+
+if (if_noisy_data == 1):
+    Rs = np.array(Rs)
+    Fs = np.array(Fs)
+    Vs = np.array(Vs)
+
+    np.random.seed(100)
+    for i in range(len(Rs)):
+        Rs[i] += np.random.normal(0,1,1)
+        Vs[i] += np.random.normal(0,1,1)
+        Fs[i] += np.random.normal(0,1,1)
+
+    Rs = jnp.array(Rs)
+    Fs = jnp.array(Fs)
+    Vs = jnp.array(Vs)
 
 mask = np.random.choice(len(Rs), len(Rs), replace=False)
 allRs = Rs[mask]
@@ -420,13 +442,13 @@ for epoch in range(epochs):
                 "ifdrag": ifdrag,
                 "trainm": trainm,
             }
-        savefile(f"cgnode_trained_model_{ifdrag}_{trainm}.dil",
+        savefile(f"trained_model_{ifdrag}_{trainm}.dil",
                     params, metadata=metadata)
         savefile(f"loss_array_{ifdrag}_{trainm}.dil",
                     (larray, ltarray), metadata=metadata)
         if last_loss > larray[-1]:
             last_loss = larray[-1]
-            savefile(f"cgnode_trained_model_low_{ifdrag}_{trainm}.dil",
+            savefile(f"trained_model_low_{ifdrag}_{trainm}.dil",
                         params, metadata=metadata)
     
         plt.clf()
@@ -451,13 +473,13 @@ plt.legend()
 plt.savefig(_filename(f"training_loss_{ifdrag}_{trainm}.png"))
 
 params = get_params(opt_state)
-savefile(f"cgnode_trained_model_{ifdrag}_{trainm}.dil",
+savefile(f"trained_model_{ifdrag}_{trainm}.dil",
             params, metadata=metadata)
 savefile(f"loss_array_{ifdrag}_{trainm}.dil",
             (larray, ltarray), metadata=metadata)
 if last_loss > larray[-1]:
     last_loss = larray[-1]
-    savefile(f"cgnode_trained_model_{ifdrag}_{trainm}_low.dil",
+    savefile(f"trained_model_{ifdrag}_{trainm}_low.dil",
                 params, metadata=metadata)
 
 if (ifDataEfficiency == 0):

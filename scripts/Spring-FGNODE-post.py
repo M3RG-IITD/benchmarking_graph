@@ -4,6 +4,7 @@
 
 import json
 import sys
+import os
 from datetime import datetime
 from functools import partial, wraps
 from statistics import mode
@@ -51,7 +52,7 @@ def pprint(*args, namespace=globals()):
         print(f"{namestr(arg, namespace)[0]}: {arg}")
 
 
-def main(N=5, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=False, stride=100, ifdrag=0, seed=42, rname=0, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 1):
+def main(N=5, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=False, stride=100, ifdrag=0, seed=42, rname=0, saveovito=1, trainm=1, runs=100, semilog=1, maxtraj=100, plotthings=False, redo=0, ifDataEfficiency = 0, if_noisy_data=0):
     if useN is None:
         useN = N
 
@@ -68,6 +69,8 @@ def main(N=5, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
     
     if (ifDataEfficiency == 1):
         out_dir = f"../data-efficiency"
+    elif (if_noisy_data == 1):
+        out_dir = f"../noisy_data"
     else:
         out_dir = f"../results"
 
@@ -79,18 +82,22 @@ def main(N=5, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
             part = f"_{ifdrag}."
         else:
             part = f"_{ifdrag}_{trainm}."
+
         if trained is not None:
             psys = f"{trained}-{PSYS.split('-')[1]}"
         else:
             psys = PSYS
-        name = ".".join(name.split(".")[:-1]) + \
-            part + name.split(".")[-1]
-        rstring = randfilename if (rname and (tag != "data")) else (
-            "0" if (tag == "data") or (withdata == None) else f"{withdata}")
+
+        name = ".".join(name.split(".")[:-1]) + part + name.split(".")[-1]
+        rstring = randfilename if (rname and (tag != "data")) else ("0" if (tag == "data") or (withdata == None) else f"{withdata}")
         if (ifDataEfficiency == 1):
             rstring = "0_" + str(data_points)
 
-        filename_prefix = f"{out_dir}/{psys}-{tag}/{rstring}/"
+        if (tag == "data"):
+            filename_prefix = f"../results/{PSYS}-{tag}/{0}/"
+        else:
+            filename_prefix = f"{out_dir}/{psys}-{tag}/{rstring}/"
+
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
         filename = f"{filename_prefix}/{name}".replace("//", "/")
@@ -333,7 +340,7 @@ def main(N=5, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
         else:
             return acceleration_fn_model(R, V, params)*mass.reshape(-1, 1)
 
-    params = loadfile(f"fgnode_trained_model_low.dil", trained=useN)[0]
+    params = loadfile(f"trained_model_low.dil", trained=useN)[0]
 
     sim_model = get_forward_sim(
         params=params, force_fn=force_fn_model, runs=runs)
@@ -588,5 +595,9 @@ def main(N=5, dt=1.0e-3, useN=5, withdata=None, datapoints=100, mpass=1, grid=Fa
         np.savetxt(f"../{N}-spring-perr/fgnode.txt", gmean_perr, delimiter = "\n")
         np.savetxt(f"../{N}-spring-simulation-time/fgnode.txt", [t/maxtraj], delimiter = "\n")
 
-# fire.Fire(main)
-main()
+main(N = 5)
+# main(N = 50)
+
+
+
+

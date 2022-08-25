@@ -76,15 +76,15 @@ def wrap_main(f):
 
 def Main(N=5, epochs=10000, seed=42, rname=False, saveat=10, error_fn="L2error",
          dt=1.0e-3, ifdrag=0, stride=100, trainm=1, grid=False, mpass=1, lr=0.001,
-         withdata=None, datapoints=None, batch_size=1000, ifDataEfficiency = 1):
+         withdata=None, datapoints=None, batch_size=1000, ifDataEfficiency = 0, if_noisy_data=1):
 
     return wrap_main(main)(N=N, epochs=epochs, seed=seed, rname=rname, saveat=saveat, error_fn=error_fn,
                            dt=dt, ifdrag=ifdrag, stride=stride, trainm=trainm, grid=grid, mpass=mpass, lr=lr,
-                           withdata=withdata, datapoints=datapoints, batch_size=batch_size, ifDataEfficiency = 1)
+                           withdata=withdata, datapoints=datapoints, batch_size=batch_size, ifDataEfficiency = ifDataEfficiency, if_noisy_data=1)
 
 
 def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
-         dt=1.0e-3, ifdrag=0, stride=100, trainm=1, grid=False, mpass=1, lr=0.001, withdata=None, datapoints=None, batch_size=1000, config=None, ifDataEfficiency = 1):
+         dt=1.0e-3, ifdrag=0, stride=100, trainm=1, grid=False, mpass=1, lr=0.001, withdata=None, datapoints=None, batch_size=1000, config=None, ifDataEfficiency = 0, if_noisy_data=1):
 
     # print("Configs: ")
     # pprint(N, epochs, seed, rname,
@@ -102,6 +102,8 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
     
     if (ifDataEfficiency == 1):
         out_dir = f"../data-efficiency"
+    elif (if_noisy_data == 1):
+        out_dir = f"../noisy_data"
     else:
         out_dir = f"../results"
 
@@ -110,7 +112,12 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
             "0" if (tag == "data") or (withdata == None) else f"{withdata}")
         if (ifDataEfficiency == 1):
             rstring = "0_" + str(data_points)
-        filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+
+        if (tag == "data"):
+            filename_prefix = f"../results/{PSYS}-{tag}/{0}/"
+        else:
+            filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
         filename = f"{filename_prefix}/{name}".replace("//", "/")
@@ -165,6 +172,21 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
     Rs = Rs.reshape(-1, N, dim)
     Vs = Vs.reshape(-1, N, dim)
     Fs = Fs.reshape(-1, N, dim)
+
+    if (if_noisy_data == 1):
+        Rs = np.array(Rs)
+        Fs = np.array(Fs)
+        Vs = np.array(Vs)
+
+        np.random.seed(100)
+        for i in range(len(Rs)):
+            Rs[i] += np.random.normal(0,1,1)
+            Vs[i] += np.random.normal(0,1,1)
+            Fs[i] += np.random.normal(0,1,1)
+
+        Rs = jnp.array(Rs)
+        Fs = jnp.array(Fs)
+        Vs = jnp.array(Vs)
 
     mask = np.random.choice(len(Rs), len(Rs), replace=False)
     allRs = Rs[mask]
@@ -456,13 +478,13 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
                 "ifdrag": ifdrag,
                 "trainm": trainm,
             }
-            savefile(f"fgnode_trained_model_{ifdrag}_{trainm}.dil",
+            savefile(f"trained_model_{ifdrag}_{trainm}.dil",
                      params, metadata=metadata)
             savefile(f"loss_array_{ifdrag}_{trainm}.dil",
                      (larray, ltarray), metadata=metadata)
             if last_loss > larray[-1]:
                 last_loss = larray[-1]
-                savefile(f"fgnode_trained_model_low_{ifdrag}_{trainm}.dil",
+                savefile(f"trained_model_low_{ifdrag}_{trainm}.dil",
                          params, metadata=metadata)
         now = time.time()
         train_time_arr.append((now - start))
@@ -483,7 +505,7 @@ def main(N=3, epochs=10000, seed=42, rname=True, saveat=10, error_fn="L2error",
         "trainm": trainm,
     }
     params = get_params(opt_state)
-    savefile(f"fgnode_trained_model_low_{ifdrag}_{trainm}.dil",
+    savefile(f"trained_model_low_{ifdrag}_{trainm}.dil",
              params, metadata=metadata)
     savefile(f"loss_array_{ifdrag}_{trainm}.dil",
              (larray, ltarray), metadata=metadata)

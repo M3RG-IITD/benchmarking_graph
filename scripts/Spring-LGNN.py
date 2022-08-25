@@ -56,7 +56,7 @@ def pprint(*args, namespace=globals()):
 
 
 def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
-         dt=1.0e-3, ifdrag=0, stride=100, trainm=1, grid=False, mpass=1, lr=0.001, withdata=None, datapoints=None, batch_size=100,  ifDataEfficiency = 1):
+         dt=1.0e-3, ifdrag=0, stride=100, trainm=1, grid=False, mpass=1, lr=0.001, withdata=None, datapoints=None, batch_size=100,  ifDataEfficiency = 0, if_noisy_data = 1):
 
     if (ifDataEfficiency == 1):
         data_points = int(sys.argv[1])
@@ -75,6 +75,8 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
     
     if (ifDataEfficiency == 1):
         out_dir = f"../data-efficiency"
+    elif (if_noisy_data == 1):
+        out_dir = f"../noisy_data"
     else:
         out_dir = f"../results"
 
@@ -83,7 +85,12 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
             "0" if (tag == "data") or (withdata == None) else f"0_{withdata}")
         if (ifDataEfficiency == 1):
             rstring = "0_" + str(data_points)
-        filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+
+        if (tag == "data"):
+            filename_prefix = f"../results/{PSYS}-{tag}/{0}/"
+        else:
+            filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
         filename = f"{filename_prefix}/{name}".replace("//", "/")
@@ -136,6 +143,21 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
     Rs = Rs.reshape(-1, N, dim)
     Vs = Vs.reshape(-1, N, dim)
     Fs = Fs.reshape(-1, N, dim)
+
+    if (if_noisy_data == 1):
+        Rs = np.array(Rs)
+        Fs = np.array(Fs)
+        Vs = np.array(Vs)
+
+        np.random.seed(100)
+        for i in range(len(Rs)):
+            Rs[i] += np.random.normal(0,1,1)
+            Vs[i] += np.random.normal(0,1,1)
+            Fs[i] += np.random.normal(0,1,1)
+
+        Rs = jnp.array(Rs)
+        Fs = jnp.array(Fs)
+        Vs = jnp.array(Vs)
 
     mask = np.random.choice(len(Rs), len(Rs), replace=False)
     allRs = Rs[mask]
@@ -269,12 +291,12 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
         "velocity": V,
         "type": species,
     },
-        edges={},
-        senders=senders,
-        receivers=receivers,
-        n_node=jnp.array([N]),
-        n_edge=jnp.array([senders.shape[0]]),
-        globals={})
+    edges={},
+    senders=senders,
+    receivers=receivers,
+    n_node=jnp.array([N]),
+    n_edge=jnp.array([senders.shape[0]]),
+    globals={})
 
     L_energy_fn(Lparams, state_graph)
 
@@ -434,13 +456,13 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
         now = time.time()
         train_time_arr.append((now - start))
 
-    fig, axs = plt.subplots(1, 1)
-    plt.semilogy(larray, label="Training")
-    plt.semilogy(ltarray, label="Test")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend()
-    plt.savefig(_filename(f"training_loss_{ifdrag}_{trainm}.png"))
+        fig, axs = plt.subplots(1, 1)
+        plt.semilogy(larray, label="Training")
+        plt.semilogy(ltarray, label="Test")
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.legend()
+        plt.savefig(_filename(f"training_loss_{ifdrag}_{trainm}.png"))
 
     metadata = {
         "savedat": epoch,
@@ -460,7 +482,6 @@ def main(N=5, epochs=10000, seed=42, rname=False, saveat=10,
         np.savetxt(f"../5-spring-training-loss/lgnn-train.txt", larray, delimiter = "\n")
         np.savetxt(f"../5-spring-training-loss/lgnn-test.txt", ltarray, delimiter = "\n")
 
-# fire.Fire(main)
 main()
 
 

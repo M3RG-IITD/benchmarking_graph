@@ -8,6 +8,7 @@ import os
 from datetime import datetime
 from functools import partial, wraps
 from statistics import mode
+from turtle import hideturtle
 
 import fire
 import jax
@@ -76,35 +77,59 @@ def wrap_main(f):
 
     return fn
 
-
 def Main(N=3, epochs=10000, seed=42, rname=False, error_fn="L2error", mpass=1, saveat=10,
-         dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001, datapoints=None, batch_size=100):
+         dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001, datapoints=None, batch_size=100, if_lr_search = 0, if_act_search = 0, if_mpass_search=0, if_hidden_search = 0, hidden = 16, if_nhidden_search = 0, nhidden=2, if_noisy_data=1):
 
     return wrap_main(main)(N=N, epochs=epochs, seed=seed, rname=rname, error_fn=error_fn, mpass=mpass,
                            dt=dt, ifdrag=ifdrag, trainm=trainm, stride=stride, lr=lr, datapoints=datapoints,
-                           batch_size=batch_size, saveat=saveat)
+                           batch_size=batch_size, saveat=saveat, if_lr_search=if_lr_search, if_act_search=if_act_search, if_mpass_search=if_mpass_search, if_hidden_search=if_hidden_search, hidden=hidden, if_nhidden_search=if_nhidden_search, nhidden=nhidden, if_noisy_data=if_noisy_data)
 
-
-def main(N=2, epochs=10000, seed=42, rname=False,  error_fn="L2error", mpass=1, saveat=10,
-         dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001,  withdata=None, datapoints=None, batch_size=1000, config=None):
-
-    # print("Configs: ")
-    # pprint(N, epochs, seed, rname,
-    #        dt, stride, lr, ifdrag, batch_size,
-    #        namespace=locals())
+def main(N=3, epochs=10000, seed=42, rname=False,  error_fn="L2error", mpass=1, saveat=10,
+         dt=1.0e-5, ifdrag=0, trainm=1, stride=1000, lr=0.001,  withdata=None, datapoints=None, batch_size=1000, config=None, if_lr_search=0, if_act_search = 0, if_mpass_search=0, if_hidden_search = 0, hidden = 5, if_nhidden_search=0, nhidden=2, if_noisy_data = 1):
 
     randfilename = datetime.now().strftime(
         "%m-%d-%Y_%H-%M-%S") + f"_{datapoints}"
 
     PSYS = f"{N}-Pendulum"
     TAG = f"fgnn"
-    out_dir = f"../results"
+
+    if (if_lr_search == 1):
+        out_dir = f"../lr_search"
+    elif (if_act_search == 1):
+        out_dir = f"../act_search"
+    elif (if_mpass_search == 1):
+        out_dir = f"../mpass_search"
+    elif (if_hidden_search == 1):
+        out_dir = f"../mlp_hidden_search"
+    elif (if_nhidden_search == 1):
+        out_dir = f"../mlp_nhidden_search"
+    elif (if_noisy_data == 1):
+        out_dir = f"../noisy_data"
+    else:
+        out_dir = f"../results"
 
     def _filename(name, tag=TAG):
         # rstring = randfilename if (rname and (tag != "data")) else (
         #     "0" if (tag == "data") or (withdata == None) else f"{withdata}")
-        rstring = 0 if (tag != "data") else 1
-        filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+        
+        if (if_lr_search == 1):
+            rstring = "1_" + str(lr)
+        elif (if_act_search == 1):
+            rstring = "1_softplus"
+        elif (if_mpass_search == 1):
+            rstring = "1_" + str(mpass)
+        elif (if_hidden_search == 1):
+            rstring = "1_" + str(hidden)
+        elif (if_nhidden_search == 1):
+            rstring = "1_" + str(nhidden)
+        else:
+            rstring = 0 if (tag != "data") else 1
+
+        if (tag == "data"):
+            filename_prefix = f"../results/{PSYS}-{tag}/{1}/"
+        else:
+            filename_prefix = f"{out_dir}/{PSYS}-{tag}/{rstring}/"
+
         file = f"{filename_prefix}/{name}"
         os.makedirs(os.path.dirname(file), exist_ok=True)
         filename = f"{filename_prefix}/{name}".replace("//", "/")
@@ -174,6 +199,27 @@ def main(N=2, epochs=10000, seed=42, rname=False,  error_fn="L2error", mpass=1, 
     # allRs = Rs[mask]
     # allVs = Vs[mask]
     # allFs = Fs[mask]
+
+    if (if_noisy_data == 1):
+        Rs = np.array(Rs)
+        Rds = np.array(Rds)
+        Fs = np.array(Fs)
+        Vs = np.array(Vs)
+        Vds = np.array(Vds)
+
+        np.random.seed(100)
+        for i in range(len(Rs)):
+            Rs[i] += np.random.normal(0,1,1)
+            Rds[i] += np.random.normal(0,1,1)
+            Vs[i] += np.random.normal(0,1,1)
+            Vds[i] += np.random.normal(0,1,1)
+            Fs[i] += np.random.normal(0,1,1)
+
+        Rs = jnp.array(Rs)
+        Rds = jnp.array(Rds)
+        Fs = jnp.array(Fs)
+        Vs = jnp.array(Vs)
+        Vds = jnp.array(Vds)
 
     mask = np.random.choice(len(Rs), len(Rs), replace=False)
     allRs = Rs[mask]
@@ -252,7 +298,7 @@ def main(N=2, epochs=10000, seed=42, rname=False,  error_fn="L2error", mpass=1, 
     senders, receivers = pendulum_connections(N)
     eorder = edge_order(N)
 
-    hidden_dim = [16, 16]
+    hidden_dim = [hidden for i in range(nhidden)]
     edgesize = 1
     nodesize = 5
     ee = 8
@@ -308,7 +354,10 @@ def main(N=2, epochs=10000, seed=42, rname=False,  error_fn="L2error", mpass=1, 
         globals={})
 
     def acceleration_fn(params, graph):
-        acc = fgn.cal_delta(params, graph, mpass=1)
+        if (if_act_search == 1):
+            acc = fgn.cal_delta_temp(params, graph, mpass=1)
+        else:
+            acc = fgn.cal_delta(params, graph, mpass=mpass)
         return acc
 
     def acc_fn(species):
@@ -476,7 +525,7 @@ def main(N=2, epochs=10000, seed=42, rname=False,  error_fn="L2error", mpass=1, 
 
             if last_loss > larray[-1]:
                 last_loss = larray[-1]
-                savefile(f"trained_model_{ifdrag}_{trainm}_low.dil",
+                savefile(f"trained_model_low_{ifdrag}_{trainm}.dil",
                          params, metadata=metadata)
         
         now = time.time()
@@ -502,12 +551,34 @@ def main(N=2, epochs=10000, seed=42, rname=False,  error_fn="L2error", mpass=1, 
     savefile(f"loss_array_{ifdrag}_{trainm}.dil",
              (larray, ltarray), metadata=metadata)
 
-    np.savetxt("../3-pendulum-training-time/fgnn.txt", train_time_arr, delimiter = "\n")
-    np.savetxt("../3-pendulum-training-loss/fgnn-train.txt", larray, delimiter = "\n")
-    np.savetxt("../3-pendulum-training-loss/fgnn-test.txt", ltarray, delimiter = "\n")
+    if (if_lr_search == 1):
+        np.savetxt(f"../lr_search/{N}-pendulum-training-time/fgnn_{lr}.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../lr_search/{N}-pendulum-training-loss/fgnn-train_{lr}.txt", larray, delimiter = "\n")
+        np.savetxt(f"../lr_search/{N}-pendulum-training-loss/fgnn-test_{lr}.txt", ltarray, delimiter = "\n")
+    elif (if_act_search == 1):
+        np.savetxt(f"../act_search/{N}-pendulum-training-time/fgnn_softplus.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../act_search/{N}-pendulum-training-loss/fgnn-train_softplus.txt", larray, delimiter = "\n")
+        np.savetxt(f"../act_search/{N}-pendulum-training-loss/fgnn-test_softplus.txt", ltarray, delimiter = "\n")
+    elif (if_mpass_search == 1):
+        np.savetxt(f"../mpass_search/{N}-pendulum-training-time/fgnn_{mpass}.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../mpass_search/{N}-pendulum-training-loss/fgnn-train_{mpass}.txt", larray, delimiter = "\n")
+        np.savetxt(f"../mpass_search/{N}-pendulum-training-loss/fgnn-test_{mpass}.txt", ltarray, delimiter = "\n")
+    if (if_hidden_search == 1):
+        np.savetxt(f"../mlp_hidden_search/{N}-pendulum-training-time/fgnn_{hidden}.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../mlp_hidden_search/{N}-pendulum-training-loss/fgnn-train_{hidden}.txt", larray, delimiter = "\n")
+        np.savetxt(f"../mlp_hidden_search/{N}-pendulum-training-loss/fgnn-test_{hidden}.txt", ltarray, delimiter = "\n")
+    if (if_nhidden_search == 1):
+        np.savetxt(f"../mlp_nhidden_search/{N}-pendulum-training-time/fgnn_{nhidden}.txt", train_time_arr, delimiter = "\n")
+        np.savetxt(f"../mlp_nhidden_search/{N}-pendulum-training-loss/fgnn-train_{nhidden}.txt", larray, delimiter = "\n")
+        np.savetxt(f"../mlp_nhidden_search/{N}-pendulum-training-loss/fgnn-test_{nhidden}.txt", ltarray, delimiter = "\n")
+    else:
+        np.savetxt("../3-pendulum-training-time/fgnn.txt", train_time_arr, delimiter = "\n")
+        np.savetxt("../3-pendulum-training-loss/fgnn-train.txt", larray, delimiter = "\n")
+        np.savetxt("../3-pendulum-training-loss/fgnn-test.txt", ltarray, delimiter = "\n")
 
+# Main()
+main()
 
-fire.Fire(Main)
 
 
 
