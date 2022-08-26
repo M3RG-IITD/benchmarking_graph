@@ -6,9 +6,14 @@ create virtual environment using "requirements.txt" file
 
 __How to run__
 Run all spcripts from scripts directory
-1. First generate data using Data generation files for:
+1. For data:
+    a) Using Data generation files for:
     Spring system:    Spring-data.py, Spring-data-HGNN.py, Spring-data-FGNN.py and
     Pendulum system:  Pendulum-data.py, Pendulum-data-HGNN.py, Pendulum-data-FGNN.py
+    or
+    b) Download the data using https://doi.org/10.5281/zenodo.7015041
 
 2. Run respective model using "sys.py" file and post simulation using "sys-post.py" file. (sys: simulation system)
+
+
 =======
