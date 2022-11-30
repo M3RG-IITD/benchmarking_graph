@@ -3,11 +3,11 @@
 ## Link of the paper accepted at NeurIPS 2022:
 https://arxiv.org/abs/2211.05520
 
-__Requirement__
+## Requirement
 numpy-1.20.3, jax-0.2.24, jax-md-0.1.20, jaxlib-0.1.73, jraph-0.0.1.dev
 create virtual environment using "requirements.txt" file
 
-__How to run__
+## How to run
 Run all spcripts from scripts directory
 1. For data:
     a) Using Data generation files for:
