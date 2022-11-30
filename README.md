@@ -18,5 +18,3 @@ Run all spcripts from scripts directory
 
 2. Run respective model using "sys.py" file and post simulation using "sys-post.py" file. (sys: simulation system)
 
-
-=======
